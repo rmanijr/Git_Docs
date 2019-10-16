@@ -1,0 +1,39 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# Playbook to check whether given processes are available in the system        #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+  - name: "linux->proc | Check given Process is running in the system"
+    block:
+      ################################################################################
+      # Check given process is available in the running process list                 #
+      ################################################################################
+      - name: "linux->proc | Check given process is available in the running process list"
+        shell: "echo \"{{ all_process_list }}\" | grep -i {{ item }} | grep -v grep"
+        register: fetched_process_list
+
+    rescue:
+      ################################################################################
+      # Update HTML with status as "NOT-OK" if any step mentioned above failed       #
+      ################################################################################
+      - name: "linux->proc | Update HTML line - If Given process is NOT found in running process list"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Process {{ item }} </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> Process {{ item }} is NOT running in the sytem </td></tr>' ]"
+
+    always:
+      ################################################################################
+      # Update HTML line - If Given process is found in running process list         #
+      ################################################################################
+      - name: "linux->proc | Update HTML line - If Given process is found in running process list"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Process {{ item }} </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> Process {{ item }} is running in the sytem </td></tr>' ]"
+        when: fetched_process_list.rc == 0

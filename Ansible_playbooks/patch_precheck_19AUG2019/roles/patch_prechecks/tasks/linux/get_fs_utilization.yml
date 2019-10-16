@@ -1,0 +1,125 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# Playbook for fetch/calculate the available space for the given mount-point   #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+  - name: "linux->fs | Get available space for given mount-point"
+    block:
+      ################################################################################
+      # Get the disk space utilization details and store it in variable              #
+      ################################################################################
+      - name: "linux->fs | Get File System details for given mount point"
+        shell: "df -k {{ item }}"
+        register: filesystem_detail
+        
+      ################################################################################
+      # Get available space value from the received the disk space utilization detail#
+      ################################################################################
+      - name: "linux->fs | Get File System available space"
+        shell: "echo \"{{ filesystem_detail.stdout }}\" | tail -n 1 | awk {'print $4'}  | sed 's/%//g'"
+        register: filesystem_avail
+
+      ################################################################################
+      # Get mount location from the received the disk space utilization detail       #
+      ################################################################################
+      - name: "linux->fs | Get File System mount point"
+        shell: "echo \"{{ filesystem_detail.stdout }}\" | tail -n 1 | awk {'print $6'}  | sed 's/%//g'"
+        register: filesystem_mount
+
+      ################################################################################
+      # Convert the KB into MB if the available space is less than 1GB               #
+      ################################################################################
+      - name: "linux->fs | Calculate free space if its less than 1 GB"
+        set_fact:
+          available_space: "{{ (filesystem_avail.stdout|int / 1024)|round(2) }} MB"
+        when: filesystem_avail.stdout|int <= 1048576
+        
+      ################################################################################
+      # Convert the KB into GB if the available space is more than 1GB               #
+      ################################################################################
+      - name: "linux->fs | Calculate free space if its more than 1 GB"
+        set_fact:
+          available_space: "{{ (filesystem_avail.stdout|int / 1048576)|round(2) }} GB"
+        when: filesystem_avail.stdout|int >= 1048576
+        
+      ################################################################################
+      # Update HTML if available space is more than specified value for given mount  #
+      # points                                                                       #
+      ################################################################################
+      - name: "linux->fs | Update HTML line - If Disk Utilization is OK"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> Available Space - {{ available_space }} </td></tr>' ]"
+        when: ( item == "/tmp" and filesystem_avail.stdout|int >= 1048576 ) or
+              ( item == "/opt" and filesystem_avail.stdout|int >= 524288 ) or
+              ( item == "/boot" and filesystem_avail.stdout|int >= 40960 ) or
+              ( item == "/opt/dbtools" and filesystem_avail.stdout|int >= 1887437 )
+              
+      ################################################################################
+      # Update HTML if available space is less than specified value for given mount  #
+      # points                                                                       #
+      ################################################################################
+      - name: "linux->fs | Update HTML line - If Disk Utilization is NOT_OK"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> Available Space - {{ available_space }} </td></tr>' ]"
+        when: ( item == "/tmp" and filesystem_avail.stdout|int < 1048576 ) or
+              ( item == "/opt" and filesystem_avail.stdout|int < 524288 ) or
+              ( item == "/boot" and filesystem_avail.stdout|int < 40960 ) or
+              ( item == "/opt/dbtools" and filesystem_avail.stdout|int < 1887437 )
+
+      ################################################################################
+      # Update HTML if /usr and /var mounted in / and available space is more than   #
+      # specified value                                                              #
+      ################################################################################
+      - name: "linux->fs | Update HTML line - if /usr and /var in root - Disk Utilization is OK"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> Available Space - {{ available_space }} </td></tr>' ]"
+        when: ( item == "/var" and filesystem_mount.stdout == "/" and filesystem_avail.stdout|int >= 3145728 ) or
+              ( item == "/usr" and filesystem_mount.stdout == "/" and filesystem_avail.stdout|int >= 3145728 )
+
+      ################################################################################
+      # Update HTML if /usr and /var mounted in / and available space is less than   #
+      # specified value                                                              #
+      ################################################################################
+      - name: "linux->fs | Update HTML line -  if /usr and /var in root - Disk Utilization is NOT_OK"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> Available Space - {{ available_space }} </td></tr>' ]"
+        when: ( item == "/var" and filesystem_mount.stdout == "/" and filesystem_avail.stdout|int < 3145728 ) or
+              ( item == "/usr" and filesystem_mount.stdout == "/" and filesystem_avail.stdout|int < 3145728 )
+
+      ################################################################################
+      # Update HTML if /usr and /var are NOT mounted in / and available space is more#
+      # than specified value                                                         #
+      ################################################################################
+      - name: "linux->fs | Update HTML line - if /usr and /var NOT in root - Disk Utilization is OK"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> Available Space - {{ available_space }} </td></tr>' ]"
+        when: ( item == "/var" and filesystem_mount.stdout != "/" and filesystem_avail.stdout|int >= 1048576 ) or
+              ( item == "/usr" and filesystem_mount.stdout != "/" and filesystem_avail.stdout|int >= 1048576 )
+
+      ################################################################################
+      # Update HTML if /usr and /var are NOT mounted in / and available space is less#
+      # than specified value                                                         #
+      ################################################################################
+      - name: "linux->fs | Update HTML line - if /usr and /var NOT in root - Disk Utilization is NOT_OK"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> Available Space - {{ available_space }} </td></tr>' ]"
+        when: ( item == "/var" and filesystem_mount.stdout != "/" and filesystem_avail.stdout|int < 1048576 ) or
+              ( item == "/usr" and filesystem_mount.stdout != "/" and filesystem_avail.stdout|int < 1048576 )
+
+    rescue:
+      ################################################################################
+      # Update HTML if above available space calculation fails in any step with      #
+      # status as "NOT-OK"                                                           #
+      ################################################################################
+      - name: "linux->fs | Update HTML line - if fails to find available space for given mount-point"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Mount {{ item }} </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to get available space. </td></tr>' ]"

@@ -1,0 +1,59 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# This vars file for mentioning the variable required for Patch Prechecks      #
+# playbooks execution for both linux and sunos                                 #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+#------------------------------------------------------------------------------#
+# Filesystem for dbpatchv2 client app to run                                   #
+#------------------------------------------------------------------------------#
+PATCHV2_FILESYSTEM: /var/adm/db/dbpatchv2
+
+#------------------------------------------------------------------------------#
+# Array for storing HTML report lines throughout the prechecks tassk executions#
+#------------------------------------------------------------------------------#
+html_email_lines: []
+
+#------------------------------------------------------------------------------#
+# File system against which utilization details needs to be fetched  - LINUX   #
+#------------------------------------------------------------------------------#
+LINUX_FILE_SYSTEMS:
+  - "/root"
+  - "/boot"
+  - "/var"
+  - "/tmp"
+  - "/usr"
+  - "/opt"
+  - "/opt/dbtools"
+  
+#------------------------------------------------------------------------------#
+# Package needs to be checked is they are available in system  - LINUX         #
+#------------------------------------------------------------------------------#
+LINUX_PKG_LIST:
+  - "dbpatchv2-client"
+  - "eds-patchtool"
+  - "emc"
+  - "Dbhpsum"
+  - "yum"
+  
+#------------------------------------------------------------------------------#
+# Processes needs to be checked is they are running in system  - LINUX - OEL   #
+#------------------------------------------------------------------------------#
+LINUX_OEL_PROC:
+  - "crs"
+  - "opsware"
+
+#------------------------------------------------------------------------------#
+# Processes needs to be checked is they are running in system  - LINUX - NONOEL#
+#------------------------------------------------------------------------------#
+LINUX_NONOEL_PROC:
+  - "opsware"

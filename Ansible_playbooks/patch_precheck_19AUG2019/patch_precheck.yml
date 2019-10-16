@@ -1,0 +1,53 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+#     THIS PLAYBOOK IS TO DO THE PATCH PRECHECKS ON THE LINUX AND SOLARIS      #
+#     TARGET NODES AND SEND THE OUTPUT REPORT AS A EMAIL TO THE SA(s).         #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+- name: "Main | Playbook for running Patch Prechecks"
+  hosts: all
+  remote_user: root
+  #no_log: true
+  #------------------------------------------------------------------------------#
+  # Prompt for getting email address of SA for sending the output report         #
+  #------------------------------------------------------------------------------#
+  vars_prompt:
+    - name: "to_email_address"
+      prompt: "################################################################################ \n Please enter the recipient email address for sending output report. \n Use comma(,) as delimiter for multiple email addresses. \n Enter Email address"
+      private: no
+      default: "ragupathi-hp.samynathan@db.com"
+  tasks:
+    ################################################################################
+    # Backup the input server list file for later reporting                        #
+    ################################################################################
+    - name: "Main | Get Date and time for using as suffix to make the files unique"
+      shell: "date +%m%d%y_%H%M%S"
+      register: unique_filename
+      delegate_to: localhost
+      run_once: true
+
+    ################################################################################
+    # Backup the input server list file for later reporting                        #
+    ################################################################################
+    - name: "Main | Backup the input server list file for later reporting"
+      copy:
+        src: "{{ inventory_file }}"
+        dest: "{{ LOCAL_LOG_LOCATION }}/failed_server_list_{{ unique_filename.stdout }}"
+      delegate_to: localhost
+      run_once: true
+      
+    ################################################################################
+    # Include Roles - Patch Precheck                                               #
+    ################################################################################
+    - name: "Main | Include Roles - Patch Precheck"
+      include_role:
+        name: patch_prechecks

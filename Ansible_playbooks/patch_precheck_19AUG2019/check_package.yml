@@ -1,0 +1,37 @@
+---
+- hosts: all
+  remote_user: root
+  tasks:
+    - name: "Main | List Packages"
+      package_facts:
+        manager: auto
+        
+    - name: "linux->main | Get stats for /var/adm/db/dbpatchv2"
+      stat:
+        path: /var/adm/db/dbpatchv2
+      register: patchv2_stat
+      
+    ################################################################################
+    # Remove Successfully connected Servers from failure Server List               #
+    ################################################################################
+    - name: "common->main | Remove Successfully connected Servers"
+      lineinfile:
+        path: "/home/dxcuser/dbRunPlaybooks/dxcuser/ragu/temp/failed_server_list_080519_100123"
+        #line: "{{ ansible_hostname | lower }}"
+        regexp: "(?i){{ ansible_hostname | lower }}.*"
+        state: absent
+      delegate_to: localhost
+      
+    #------------------------------------------------------------------------------#
+    # Get details from opswgw and store the output in the variable                   #
+    #------------------------------------------------------------------------------#
+    - name: "linux->main | Run dmidecode command"
+      raw: "df -k | grep \"/opt\""
+      register: opswgw_output1
+      
+    #------------------------------------------------------------------------------#
+    # Get details from opswgw and store the output in the variable                   #
+    #------------------------------------------------------------------------------#
+    - name: "linux->main | Run dmidecode command"
+      shell: "df -k | grep \"/opt\""
+      register: opswgw_output1

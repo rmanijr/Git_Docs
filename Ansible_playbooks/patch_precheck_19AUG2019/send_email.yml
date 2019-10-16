@@ -1,0 +1,14 @@
+---
+- hosts: all
+  remote_user: root
+  tasks:
+    - name: "Send Email"
+      mail:
+        host: "localhost"
+        port: 25
+        from: "ragupathi-hp.samynathan@db.com"
+        to: "ragupathi-hp.samynathan@db.com"
+        subject: "Reg: Test EMail From DEV ANsible"
+        body: "Test EMail From DEV Ansible"
+      delegate_to: localhost
+      run_once: true

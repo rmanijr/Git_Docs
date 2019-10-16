@@ -1,0 +1,426 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# This main playboook is do the patch precheck steps to the Linux OS           #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+  ################################################################################
+  # Include task for Checking File System Utilization                            #
+  # Below are the some of the Filesystems configured,                            #
+  # "/root", "/boot", "/var", "/tmp", "/usr", "/opt" , "/opt/dbtools"            #
+  ################################################################################
+  - name: "linux->main | Check File System Utilization"
+    include_tasks: get_fs_utilization.yml
+    with_items: "{{ LINUX_FILE_SYSTEMS }}"
+    
+  ################################################################################
+  # Include task for Checking rootvg Utilization                                 #
+  ################################################################################
+  - name: "linux->main | Check rootvg Freesapce"
+    include_tasks: get_rootvg_utilization.yml
+
+  ################################################################################
+  # Block for Checking /var/adm/db/dbpatchv2 is exists or not                    #
+  ################################################################################
+  - name: "linux->main | Get stats for /var/adm/db/dbpatchv2"
+    block:
+      #------------------------------------------------------------------------------#
+      # Get stats for /var/adm/db/dbpatchv2 and store the output in the variable     #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Get stats for /var/adm/db/dbpatchv2"
+        stat:
+          path: "{{ PATCHV2_FILESYSTEM }}"
+        register: patchv2_stat
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If failed to get stat for /var/adm/db/dbpatchv2           #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If failed to get stat for /var/adm/db/dbpatchv2"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Filesystem /var/adm/db/dbpatchv2 </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to get stat for {{ PATCHV2_FILESYSTEM }} </td></tr>' ]"
+    
+    always:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If /var/adm/db/dbpatchv2 is exists in the system          #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If /var/adm/db/dbpatchv2 is exists in the system"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Filesystem /var/adm/db/dbpatchv2 </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> Location {{ PATCHV2_FILESYSTEM }} exists in the system </td></tr>' ]"
+        when: patchv2_stat.stat.exists == true
+        
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If /var/adm/db/dbpatchv2 is NOT exists in the system      #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If /var/adm/db/dbpatchv2 is NOT exists in the system"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Filesystem /var/adm/db/dbpatchv2 </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> Location {{ PATCHV2_FILESYSTEM }} NOT exists in the system </td></tr>' ]"
+        when: patchv2_stat.stat.exists != true
+
+  ################################################################################
+  # Block for checking whether giving services are running system or not         #
+  ################################################################################
+  - name: "linux->main | Check Service Status"
+    block:
+      #------------------------------------------------------------------------------#
+      # Check the status of the service                                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Check the status of the service"
+        shell: "service kdump status 2> /dev/null"
+        register: service_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML file - If Kdump Service NOT found in system                      #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML file - If Kdump Service NOT found in system"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Service kdump </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> kdump - Service is not running (or) Failed to get status of the service </td></tr>' ]"
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Update HTML file - If Kdump Service found in system                          #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML file - If Kdump Service found in system"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Service kdump </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> kdump - Service is running </td></tr>' ]"
+        when: service_output.rc == 0
+
+  ################################################################################
+  # Block for checking whethere given package are installed are in system        #
+  # Below are the some of the packages configured,                               #
+  # "dbpatchv2-client", "eds-patchtool", "emc", "Dbhpsum" etc.                   #
+  ################################################################################
+  - name: "linux->main | Check Package Information"
+    block:
+      #------------------------------------------------------------------------------#
+      # Collect the Package facts                                                    #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Collect the Package facts"
+        package_facts:
+          manager: auto
+
+      #------------------------------------------------------------------------------#
+      # Include Task for checking given package installed in the system              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Get Package Info"
+        include_tasks: get_pkg_info.yml
+        with_items: "{{ LINUX_PKG_LIST }}"
+        
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML file - If fails to get the package information                   #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML file - If fails to get the package information"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Packages </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to get Package Information. </td></tr>' ]"
+
+  ################################################################################
+  # Block for checking given processes are running in the system                 #
+  ################################################################################
+  - name: "linux->main | Check given processes are running"
+    block:
+      #------------------------------------------------------------------------------#
+      # Get All Process by running the "ps -ef" command                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Get All Process"
+        shell: "ps -ef 2> /dev/null"
+        register: all_process_list
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command failed to get the rinning process details      #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command failed to Execute"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Processes </td><td align=\"center\"><font color=\"red\"><b> Failed </b></font></td><td> Failed to get running Process. {{ all_process_list.stderr }} </td></tr>' ]"
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Check Process are running - OEL                                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Check Process are running - OEL"
+        include_tasks: get_proc_info.yml
+        when: ansible_distribution == "OracleLinux" and all_process_list.rc == 0
+        with_items: "{{ LINUX_OEL_PROC }}"
+
+      #------------------------------------------------------------------------------#
+      # Check Process are running - Non-OEL                                          #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Check Process are running - Non-OEL"
+        include_tasks: get_proc_info.yml
+        when: ansible_distribution != "OracleLinux" and all_process_list.rc == 0
+        with_items: "{{ LINUX_NONOEL_PROC }}"
+
+  ################################################################################
+  # Block for getting Firmware Details                                           #
+  ################################################################################
+  - name: "linux->main | Get Firmware Details "
+    block:
+      #------------------------------------------------------------------------------#
+      # Run dmidecode command and store the output in the variable                   #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run dmidecode command"
+        shell: "dmidecode -t system 2> /dev/null"
+        register: dmidecode_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command failed to Execute                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command failed to Execute"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output dmidecode </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to Execute Command \"dmidecode -t system\" </td></tr>' ]"
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters for HTML Output                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters for HTML Output"
+        set_fact:
+          escaped_dmidecode_output: "{{ dmidecode_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: dmidecode_output.rc == 0
+
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output dmidecode </td><td align=\"center\"><font color=\"green\"><b> Output Received </b></font></td><td> {{ escaped_dmidecode_output }} </td></tr>' ]"
+        when: dmidecode_output.rc == 0
+
+  ################################################################################
+  # Block for checking the Console IP address and Username                       #
+  ################################################################################
+  - name: "linux->main | Get Console IP Address and Username from Server using hponcfg command"
+    block:
+      #------------------------------------------------------------------------------#
+      # Run hponcfg command                                                          #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run hponcfg command"
+        shell: "hponcfg -w /tmp/ilooutput.txt 2> /dev/null"
+        register: hponcfg_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Print Error Message                                                          #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Print Error Message"
+        debug:
+          msg: "Failed to Execute command \"hponcfg\""
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters for HTML Output                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters for HTML Output"
+        set_fact:
+          escaped_hponcfg_output: "{{ hponcfg_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: hponcfg_output.rc == 0
+        
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output hponcfg </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> {{ escaped_hponcfg_output }} </td></tr>' ]"
+        when: hponcfg_output.rc == 0
+
+  ################################################################################
+  # Block for checking the Console IP address and Username                       #
+  ################################################################################  
+  - name: "linux->main | #### Get Console IP Address and Username from Server using ipmitool ####"
+    block:
+      #------------------------------------------------------------------------------#
+      # Run ipmitool command                                               #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run ipmitool command"
+        shell: "ipmitool lan print 2> /dev/null;ipmitool user list 2 2> /dev/null"
+        register: hpmitool_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Commands failed to Execute                             #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Commands failed to Execute"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output Console IP and Username </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to Execute Commands \"hponcfg -w /tmp/ilooutput.txt\" and \"ipmitool lan print;ipmitool user list 2\" </td></tr>' ]"
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters for HTML Output                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters for HTML Output"
+        set_fact:
+          escaped_hpmitool_output: "{{ hpmitool_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: hpmitool_output.rc == 0
+
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output hponcfg </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> {{ escaped_hpmitool_output }} </td></tr>' ]"
+        when: hpmitool_output.rc == 0
+    when: hponcfg_output.rc != 0
+
+  ################################################################################
+  # Block for checking Hardware status using hpacucli command                    #
+  ################################################################################
+  - name: "linux->main | Check Hardware status using hpacucli command"
+    block:
+      #------------------------------------------------------------------------------#
+      # Run hpacucli command                                                         #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run hpacucli command"
+        shell: "hpacucli ctrl all show status 2> /dev/null"
+        register: hpacucli_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Print Error Message                                                          #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Print Error Message"
+        debug:
+          msg: "Failed to Execute command \"hpacucli\""
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters for HTML Output                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters for HTML Output"
+        set_fact:
+          escaped_hpacucli_output: "{{ hpacucli_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: hpacucli_output.rc == 0
+
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output hpacucli </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> {{ escaped_hpacucli_output }} </td></tr>' ]"
+        when: hpacucli_output.rc == 0
+
+  ################################################################################
+  # Block for checking Hardware status using hpacucli command                    #
+  ################################################################################
+  - name: "linux->main | Check Hardware status using hpssacli command"
+    block:
+      #------------------------------------------------------------------------------#
+      # Run hpssacli command and store output in variable                            #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run hpssacli command"
+        shell: "hpssacli ctrl all show status 2> /dev/null"
+        register: hpssacli_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Commands failed to Execute                             #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Commands failed to Execute"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output Hardware Status </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to Execute Commands \"hpacucli ctrl all show status\" and \"hpssacli ctrl all show status\" </td></tr>' ]"
+          
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters for HTML Output                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters for HTML Output"
+        set_fact:
+          escaped_hpssacli_output: "{{ hpssacli_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: hpssacli_output.rc == 0
+        
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output hpssacli </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> {{ escaped_hpssacli_output }} </td></tr>' ]"
+        when: hpssacli_output.rc == 0
+    when: hpacucli_output.rc != 0
+
+  ################################################################################
+  # Block for checking the details for /u01* mounts if its a OEL server          #
+  ################################################################################
+  - name: "linux->main | Get the details for /u01* mounts"
+    block:
+      #------------------------------------------------------------------------------#
+      # Run df -h /u01* command and store the output in the variable                 #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run \"df -h | grep /u01\" command"
+        shell: "df -h | grep /u01 2> /dev/null "
+        register: df_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command failed to Execute                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command failed to Execute"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output df -h /u01*</td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to Execute Command \"df -h /u01*\" </td></tr>' ]"
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters HTML Output and filter mount points /u01       #                                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters HTML Output and filter mount points /u01"
+        set_fact:
+          escaped_df_output: "{{ df_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: df_output.rc == 0
+
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output df -h /u01* </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> {{ escaped_df_output }} </td></tr>' ]"
+        when: df_output.rc == 0
+
+    when: ansible_distribution == "OracleLinux"
+  
+  ################################################################################
+  # Block for getting Media IP details only for SLES(Suse)                       #
+  ################################################################################
+  - name: "linux->main | Get Media IP Details "
+    block:
+      #------------------------------------------------------------------------------#
+      # Get details from opswgw and store the output in the variable                   #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Run dmidecode command"
+        shell: "cat /etc/opt/opsware/agent/opswgw.args 2> /dev/null"
+        register: opswgw_output
+
+    rescue:
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command failed to Execute                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command failed to Execute"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output Media IP </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to Execute Command \"cat /etc/opt/opsware/agent/opswgw.args\" </td></tr>' ]"
+
+    always:
+      #------------------------------------------------------------------------------#
+      # Escape the Special characters for HTML Output                                #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Escape the Special characters for HTML Output"
+        set_fact:
+          escaped_opswgw_output: "{{ opswgw_output.stdout | regex_replace(\"<\", \"&lt;\") | regex_replace(\">\", \"&gt;\") | regex_replace(\"\\n\", \"<br>\") }}"
+        when: opswgw_output.rc == 0
+
+      #------------------------------------------------------------------------------#
+      # Update HTML Line - If Command's output received                              #
+      #------------------------------------------------------------------------------#
+      - name: "linux->main | Update HTML Line - If Command's output received"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Output Media IP </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> {{ escaped_opswgw_output }} </td></tr>' ]"
+        when: opswgw_output.rc == 0
+    
+    when: ansible_distribution == "SLES"

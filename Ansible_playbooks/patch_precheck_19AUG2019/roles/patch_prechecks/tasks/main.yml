@@ -1,0 +1,35 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# Playbook to for including the tasks based on the Operating system and to     #
+# include common task for creating/updating/emailing the HTML output           #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+  ################################################################################
+  # Include Task if Operating system Matches Linux                               #
+  ################################################################################
+  - name: "main | Run the Patch Pre-check Roles - Linux"
+    include_tasks: tasks/linux/main.yml
+    when: ansible_system == "Linux"
+
+  ################################################################################
+  # Include Task if Operating system Matches SunOS                               #
+  ################################################################################
+  - name: "main | Run the Patch Pre-check Roles - SunOS"
+    include_tasks: tasks/sunos/main.yml
+    when: ansible_system == "SunOS"
+
+  ################################################################################
+  # Include Common tasks for updating HTML file and sending Email                #
+  ################################################################################
+  - name: "main | Run the Common Roles"
+    include_tasks: tasks/common/main.yml
+    when: ansible_system == "Linux" or ansible_system == "SunOS"

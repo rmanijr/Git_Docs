@@ -1,0 +1,67 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# Playbook to check whether rootvg has enough space to take backup of /        #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+  - name: "linux->rootvg | Get available space for given mount-point"
+    block:
+      ################################################################################
+      # Get File System details for mount point - /                                  #
+      ################################################################################
+      - name: "linux->rootvg | Get File System details for mount point - /"
+        shell: "df -h /"
+        register: root_filesystem_detail
+
+      ################################################################################
+      # Get File System available space for mount point - /                          #
+      ################################################################################
+      - name: "linux->rootvg | Get File System available space for mount point - /"
+        shell: "echo \"{{ root_filesystem_detail.stdout }}\" | tail -n 1 | awk {'print $3'} | cut -d 'G' -f 1"
+        register: root_filesystem_used
+
+      ################################################################################
+      # Get rootvg FreeSpace                                                         #
+      ################################################################################
+      - name: "linux->rootvg | Get rootvg FreeSpace"
+        shell: "vgs"
+        register: vgs_output
+
+      ################################################################################
+      # Get File System available space                                              #
+      ################################################################################
+      - name: "linux->rootvg | Get File System available space"
+        shell: "echo \"{{ vgs_output.stdout }}\" | grep rootvg | awk {'print $7'} | cut -d 'g' -f 1"
+        register: vgs_output_freespace
+
+      ################################################################################
+      # Update HTML file - If rootvg has enough space                                #
+      ################################################################################
+      - name: "linux->rootvg | Update HTML file - If rootvg has enough space"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Freespace check rootvg </td><td align=\"center\"><font color=\"green\"><b> OK </b></font></td><td> Used space in / - {{ root_filesystem_used.stdout }} GB <br> Free space in rootvg {{ vgs_output_freespace.stdout }} GB </td></tr>' ]"
+        when: vgs_output_freespace.stdout >= root_filesystem_used.stdout
+
+      ################################################################################
+      # Update HTML file - If rootvg does not has enough space                       #
+      ################################################################################
+      - name: "linux->rootvg | Update HTML file - If rootvg does not has enough space"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Freespace check rootvg </td><td align=\"center\"><font color=\"red\"><b> NOT-OK </b></font></td><td> Used space in / - {{ root_filesystem_used.stdout }} GB <br> Free space in rootvg {{ vgs_output_freespace.stdout }} GB </td></tr>' ]"
+        when: vgs_output_freespace.stdout < root_filesystem_used.stdout
+        
+    rescue:
+      ################################################################################
+      # Update HTML with status as "FAILED" if any step mentioned above failed       #
+      ################################################################################
+      - name: "linux->rootvg | Update HTML line - if fails to find available space for given mount-point"
+        set_fact:
+          html_email_lines: "{{ html_email_lines }} + [ '<tr><td align=\"center\"> Freespace check rootvg </td><td align=\"center\"><font color=\"red\"><b> FAILED </b></font></td><td> Failed to get available space. </td></tr>' ]"

@@ -1,0 +1,198 @@
+################################################################################
+# ANSIBLE PLAYBOOK FOR DEUTSCHE BANK - PRECHECKS                               #
+#                                                                              #
+# DEVELOPED BY : DXC CLOUD AUTOMATION TEAM                                     #
+#                                                                              #
+# VERSION: 1.0                                                                 #
+#                                                                              #
+# PURPOSE OF THIS PLAYBOOK:                                                    #
+# Playbook has common tasks like updating HTML file with report lines received,#
+# Emailing HTML files, Archive the HTML files after sending email to the SA(s) #
+################################################################################
+# VERSION HISTORY:                                                             #
+#  1.0 (INITIAL VERSION)                                                       #
+################################################################################
+---
+  ################################################################################
+  # Set HTML output file location                                                #
+  ################################################################################
+  - name: "common->main | Set HTML output file location"
+    set_fact:
+      html_output_file: "{{ LOCAL_LOG_LOCATION }}/{{ ansible_hostname }}.html"
+    delegate_to: localhost
+
+  ################################################################################
+  # Remove Old HTML File - Before Creating                                       #
+  ################################################################################
+  - name: "common->main | Remove Old HTML File - Before Creating"
+    file:
+      path: "{{ html_output_file }}"
+      state: absent
+    delegate_to: localhost
+
+  ################################################################################
+  # Write HTML Header                                                            #
+  ################################################################################
+  - name: "common->main | Write HTML Header"
+    lineinfile:
+      path: "{{ html_output_file }}"
+      line: "<html><body><br><br><table border=\"1\" style=\"border-collapse: collapse;\"><tr align=\"left\"><td><b> Hostname </b></td><td> {{ ansible_hostname }} </td></tr> <tr align=\"left\"><td><b> Kernel Version </b></td><td> {{ ansible_kernel }} </td></tr><tr align=\"left\"><td><b> OS Type </b></td><td> {{ ansible_system }} </td></tr> <tr align=\"left\"><td><b> OS Distribution </b></td><td> {{ ansible_distribution }} </td></tr> </table><br><br><table border=\"2\" style=\"border-collapse: collapse;\"><tr><th> Item </th><th> Status </th> <th> Output </th></tr>"
+      create: yes
+      state: present
+    delegate_to: localhost
+
+  ################################################################################
+  # Write HTML - Line-by-Line                                                    #
+  ################################################################################
+  - name: "common->main | Write HTML - Line-by-Line"
+    lineinfile:
+      path: "{{ html_output_file }}"
+      line: "{{ item }}"
+      create: yes
+      state: present
+    with_items: "{{ html_email_lines }}"
+    delegate_to: localhost
+
+  ################################################################################
+  # Write HTML Footer                                                            #
+  ################################################################################
+  - name: "common->main | Write HTML Footer"
+    lineinfile:
+      path: "{{ html_output_file }}"
+      line: "</table></body></html>"
+      create: yes
+      state: present
+    delegate_to: localhost
+
+  ################################################################################
+  # Fetch HTML Code for sending Email                                            #
+  ################################################################################
+  - name: "common->main | Fetch Failed connected Servers"
+    set_fact:
+      html_output_file_content: "{{ lookup('file', html_output_file) }}"
+    delegate_to: localhost
+    
+  ################################################################################
+  # Send Email - Patch Precheck Report                                           #
+  ################################################################################
+  - name: "common->main | Send Email - Patch Precheck Report"
+    mail:
+      host: "localhost"
+      port: 25
+      from: "Ansible Patch Prechecks <root.uk.mail.db.com@discard.mail.db.com>"
+      to: "{{ to_email_address }}"
+      subtype: "html"
+      subject: "::Ansible:: Patch Precheck Report - {{ ansible_hostname }}"
+      body: "{{ html_output_file_content }}"
+    delegate_to: localhost
+
+  ################################################################################
+  # Remove Old HTML Report  File                                                #
+  ################################################################################
+  - name: "common->main | Remove Old HTML File"
+    file:
+      path: "{{ html_output_file }}"
+      state: absent
+    delegate_to: localhost
+
+
+  ################################################################################
+  # Set Successful server file location                                              #
+  ################################################################################
+  - name: "common->main | Set Successful server file location"
+    set_fact:
+      success_server_file: "{{ LOCAL_LOG_LOCATION }}/success_server_list_{{ unique_filename.stdout }}"
+    delegate_to: localhost
+    run_once: true
+
+  ################################################################################
+  # Set Failed server file location                                              #
+  ################################################################################
+  - name: "common->main | Set Failed server file location"
+    set_fact:
+      failed_server_file: "{{ LOCAL_LOG_LOCATION }}/failed_server_list_{{ unique_filename.stdout }}"
+    delegate_to: localhost
+    run_once: true
+
+  ################################################################################
+  # Remove Successfully connected Servers from failure Server List               #
+  ################################################################################
+  - name: "common->main | Remove Successfully connected Servers"
+    lineinfile:
+      path: "{{ failed_server_file }}"
+      regexp: "(?i){{ ansible_fqdn }}"
+      state: absent
+    delegate_to: localhost
+    
+  ################################################################################
+  # Append Successfully connected Servers from Success Server List               #
+  ################################################################################
+  - name: "common->main | Append Successfully connected Servers"
+    lineinfile:
+      path: "{{ success_server_file }}"
+      line: "{{ ansible_fqdn | lower }}"
+      create: yes
+      state: present
+    delegate_to: localhost
+
+  ################################################################################
+  # Fetch Failed connected Servers                                               #
+  ################################################################################
+  - name: "common->main | Fetch Failed connected Servers"
+    set_fact:
+      failed_server_content: "{{ lookup('file', failed_server_file) }}"
+    delegate_to: localhost
+    run_once: true
+
+  ################################################################################
+  # Fetch Successful connected Servers                                           #
+  ################################################################################
+  - name: "common->main | Fetch Successfully connected Servers"
+    set_fact:
+      success_server_content: "{{ lookup('file', success_server_file) }}"
+    delegate_to: localhost
+    run_once: true
+    
+  ################################################################################
+  # Consolidate the EMail content for summary report                             #
+  ################################################################################
+  - name: "common->main | Consolidate the Email content for summary report"
+    set_fact:
+      summary_email_content: "<font color=\"red\"><u><h3>Failed Server List</h3></u><br> {{ failed_server_content | regex_replace(\"\\n\", \"<br>\") }} </font> <p>--------------------------------------------------------------------------------</p>   <font color=\"green\"><u><h3>Success Server List</h3></u><br> {{ success_server_content | regex_replace(\"\\n\", \"<br>\") }} </font>"
+    delegate_to: localhost
+    run_once: true
+
+  ################################################################################
+  # Send Email - Patch Precheck Summary                                          #
+  ################################################################################
+  - name: "common->main | Send Email - Patch Precheck Summary"
+    mail:
+      host: "localhost"
+      port: 25
+      from: "Ansible Patch Prechecks <root.uk.mail.db.com@discard.mail.db.com>"
+      to: "{{ to_email_address }}"
+      subtype: "html"
+      subject: "::Ansible:: Patch Precheck Summary"
+      body: "{{ summary_email_content }}"
+    delegate_to: localhost
+    run_once: true
+    
+  ################################################################################
+  # Remove Successful Server list file                                           #
+  ################################################################################
+  - name: "common->main | Remove Successful Server list file"
+    file:
+      path: "{{ success_server_file }}"
+      state: absent
+    delegate_to: localhost
+    run_once: true
+    
+  ################################################################################
+  # Remove Failed Server list file                                               #
+  ################################################################################
+  - name: "common->main | Remove Failed Server list file"
+    file:
+      path: "{{ failed_server_file }}"
+      state: absent
+    delegate_to: localhost
+    run_once: true
