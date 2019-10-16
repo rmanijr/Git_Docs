@@ -1,0 +1,10 @@
+- name: write to file via lineinfile
+  lineinfile:
+       dest: "{{filename}}"
+       line: "{{ item }}"
+       state: present
+       create: yes
+  with_items:
+     "{{ write1 }}"
+  delegate_to: localhost
+  listen: write to file

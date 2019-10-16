@@ -1,0 +1,85 @@
+################# Windows Server Pre and Post check configuration report #########################
+################## Compare Pre and post check file and create difference report ##################
+    - name: Check the file "c:\temp\HealthCheck.txt" is exists
+      block:
+        - name: Check the file "c:\temp\HealthCheck.txt" is exists
+          win_stat:
+             path: c:\temp\HealthCheck.txt 
+             get_checksum: no
+          register: fileinfo        
+
+        - name: Delete the file "C:\Temp\HealthCheck.txt"
+          raw: del c:\temp\HealthCheck.txt 
+          when: fileinfo.stat.exists
+      
+        - name: ping the server '{{inventory_hostname}}'
+          command: ansible {{inventory_hostname}} -m win_ping -i hosts
+          register: winping
+          delegate_to: localhost
+
+        - name: "Collect Servername configuration report:-"
+          win_shell: |
+            write-output "Server name:$env:computername - Windows Server {{report_type}} check Report" |out-file c:\temp\HealthCheck.txt
+            write-output "-----------------Report generated on $(get-date)-------------------------" |out-file c:\temp\HealthCheck.txt -append
+            " " |out-file c:\temp\HealthCheck.txt -append
+            Write-output "--- Uptime --- "|out-file c:\temp\HealthCheck.txt -append
+            systeminfo |findstr /c:'System Boot Time:' |out-file c:\temp\HealthCheck.txt -append
+            " " |out-file c:\temp\HealthCheck.txt -append
+            Write "--- disk space details ---"|out-file c:\temp\HealthCheck.txt -append
+            Get-WmiObject  Win32_Volume | ft –auto DriveLetter,Label,@{Label=”Free(GB)”;Expression={“{0:N0}” –F ($_.FreeSpace/1GB)}},`
+            @{Label=”%Free”;Expression={“{0:P0}” –F ($_.FreeSpace/$_.Capacity)}} |out-file c:\temp\HealthCheck.txt -append
+            " " |out-file c:\temp\HealthCheck.txt -append
+            write-output "---IP Config /all ---" |out-file c:\temp\HealthCheck.txt -append
+            cmd "/c IPconfig /all"  >>c:\temp\HealthCheck.txt
+            " " |out-file c:\temp\HealthCheck.txt -append
+            write-output "--- Route Print ----"|out-file c:\temp\HealthCheck.txt -append
+            route print |out-file c:\temp\HealthCheck.txt -append -width 1000
+            " " |out-file c:\temp\HealthCheck.txt -append
+            write-output "--- Services details --- "|out-file -width 3000 c:\temp\HealthCheck.txt -append
+            " " |out-file c:\temp\HealthCheck.txt -append
+            Get-service |Select Name,DisplayName,Status |ft -autosize|out-file -width 3000 c:\temp\HealthCheck.txt -append
+            write-output "--- Netstat -ano ----"|out-file c:\temp\HealthCheck.txt -append
+            netstat -ano |out-file c:\temp\HealthCheck.txt -append -width 1000
+          when: winping.rc == 0
+     
+      rescue:
+        - name: This will only run only if any error
+          command: ansible {{inventory_hostname}} -m win_ping 
+          register: pingresult
+          delegate_to: localhost
+        - debug:
+             var: pingresult.stdout
+    
+    - name: Delete the Old report "C:\temp\HealthCheck_*.txt "
+      raw: |
+         del c:\temp\HealthCheck_pre.txt
+         del c:\temp\HealthCheck_post.txt
+      ignore_errors: yes
+      when: report_type == 'pre'    
+
+    - name: delete the Old report "C:\temp\HealthCheck_post.txt"
+      raw: del c:\temp\HealthCheck_post.txt
+      ignore_errors: yes
+      when: report_type == 'post'
+
+    - name: "Rename the report file HealthCheck.txt to HealthCheck_{{report_type}}.txt"
+      raw: ren c:\temp\HealthCheck.txt "c:\temp\HealthCheck_{{report_type}}.txt"
+      ignore_errors: yes
+      when: report_type == 'pre' or report_type == 'post'
+    
+    - name: Check if Pre check file exists
+      win_stat:
+         path: c:\temp\HealthCheck_pre.txt
+         get_checksum: no
+      register: file_precheck
+    - name: Check if Post check file exists
+      win_stat:
+         path: c:\temp\HealthCheck_post.txt
+         get_checksum: no
+      register: file_postcheck
+
+    - name: Compare the report if both the files are present
+      win_shell: |
+          Compare-Object -ReferenceObject (gc C:\temp\HealthCheck_pre.txt) -DifferenceObject (gc C:\temp\HealthCheck_post.txt) |ft -autosize |out-file "C:\temp\HC_Diff_report.txt" -width 1000
+#      ignore_errors: yes
+      when: file_precheck.stat.exists and file_postcheck.stat.exists

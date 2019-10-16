@@ -1,0 +1,16 @@
+- name: "Main |Windows server health Check report"
+  hosts: all
+  remote_user: root
+  vars_prompt:
+    - name: "report_type"     
+      prompt:
+         "############## \n Please enter the report type (pre or post) ##########"
+      private: no
+      default: "pre"  
+  roles:
+    - role: win_healthcheck
+
+
+
+
+  

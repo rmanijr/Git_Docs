@@ -1,0 +1,18 @@
+#localhost ansible_user=root ansible_password=Chennai@123
+
+[win]
+#192.168.216.154
+192.168.216.190
+
+[win:vars]
+ansible_user=Administrator
+ansible_password=Chennai@123
+ansible_connection=winrm
+ansible_winrm_server_cert_validation=ignore
+
+
+
+
+
+
+

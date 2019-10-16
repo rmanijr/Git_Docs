@@ -1,0 +1,21 @@
+- name: Server health check report
+  include_tasks: win_healthcheck.yml
+
+
+- name: Copy a single file where the source is on the remote host
+  fetch:
+    src: "{{ item.src }} "
+    dest: "{{ item.dest }}"
+    flat: yes
+  ignore_errors: yes
+  with_items:
+      - { src: 'C:\temp\HC_Diff_report.txt', dest: '/etc/ansible/Win_HealthCheck/{{ansible_hostname}}_HC_Diff_report.txt' }
+      - { src: 'C:\temp\HealthCheck_pre.txt', dest: '/etc/ansible/Win_HealthCheck/{{ansible_hostname}}_HealthCheck_pre.txt' }
+      - { src: 'C:\temp\HealthCheck_post.txt', dest: '/etc/ansible/Win_HealthCheck/{{ansible_hostname}}_HealthCheck_post.txt' }
+  when: file_precheck.stat.exists and file_postcheck.stat.exists
+
+#- name: append the file
+ # shell: |
+  #   cat {{ansible_hostname}}_HealthCheck1.txt >>{{ansible_hostname}}_HealthCheck.txt
+   #  rm -f {{ansible_hostname}}_HealthCheck1.txt 
+  #delegate_to: localhost

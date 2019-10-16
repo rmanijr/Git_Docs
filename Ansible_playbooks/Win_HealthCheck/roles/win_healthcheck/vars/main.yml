@@ -1,0 +1,9 @@
+# Windows Server health check report 
+#  Output filename via variable to use in lineinfile #
+#------------------------------------------------------------------------------#
+
+ filename: '/etc/ansible/Win_HealthCheck/Health_check.log'
+
+ write1:
+    - "----- Windows Server : {{inventory_hostname}} Health check Report -------"
+    - "--------------------------------------------------------------------------"
