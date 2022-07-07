@@ -1,0 +1,18 @@
+---
+- hosts: win
+  gather_facts: false
+  tasks:
+  - name: copy files
+    win_copy:
+      src: c:\temp\test.ps1
+      dest: c:\test.ps1
+      remote_src: yes
+  - name: list the directory
+    win_shell:
+      gci c:\temp 
+
+  - name: copy file to win
+    win_copy:
+      src: c:\temp\test.ps1     
+      dest: /root/test.ps1
+      remote_src: yes

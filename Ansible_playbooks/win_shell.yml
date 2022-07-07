@@ -1,0 +1,17 @@
+---
+- name: Ansible win_shell module example
+  remote_user: localadmin
+  hosts: win
+  tasks:
+  - name: single line powershell 
+    win_shell: c:\temp\test.ps1\
+    register: filecreationstatus
+
+  - debug:
+      msg: "Status of the file creation {{ filecreationstatus}}"
+  - name: Run multi-lined shell command
+    win_shell: |
+      $text = 'I am auther of ATA '
+      set-content -path c:\temp\test1.txt -value $text
+
+

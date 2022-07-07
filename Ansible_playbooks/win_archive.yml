@@ -1,0 +1,8 @@
+---
+- hosts: win
+  gather_facts: false
+  tasks:
+  - name: Archive the folder
+    community.windows.win_zip:
+      src: c:/temp/*
+      dest: c:/temp.zip

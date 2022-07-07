@@ -1,0 +1,9 @@
+---
+- hosts: win
+  tasks:
+  - name: copy file
+    win_copy:
+      src: c:\temp\ipconfig.txt
+      dest: c:\temp\ipconfig1.txt
+      remote_src: yes
+

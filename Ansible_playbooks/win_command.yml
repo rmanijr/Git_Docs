@@ -1,0 +1,21 @@
+---
+- name: save the result of 'whoami' in 'whoami_out'
+  hosts: win
+  tasks:
+  - name: save the result of whoami
+    win_command:
+      whoami
+    register: whoami_out
+
+  - name: Run command that only runs if folder exists and runs from a specific folder
+    win_command:
+      wbadmin -backupTarget:c:\backup
+    args:
+      chdir: c:\temp
+      creates: c:\backup
+
+  - name: Run and executable and send data to the stdin for the executable
+    win_command: powershell.exe -
+    args: 
+      stdin: write-host test
+

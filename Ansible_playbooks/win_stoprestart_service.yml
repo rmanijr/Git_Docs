@@ -1,0 +1,59 @@
+---
+- hosts: win
+  gather_facts: false
+  tasks:
+  - name: check the service if exist
+    win_service:
+      name: vss
+    register: servicestatus
+
+  - debug:
+      msg: "Service: {{servicestatus.name}}found on the server: {{ansible_host}} "
+    when: servicestatus.exists == true
+  
+  - name: Stop the service 'vss'
+    win_service:
+      name: vss
+      state: stopped
+    register: stop_servicestatus
+    when: servicestatus.exists == true
+
+
+  - name: Display the service status after 'stopped'
+    debug:
+      msg: "Service {{servicestatus.name}}: {{stop_servicestatus.state}}"
+    when: stop_servicestatus.state == 'stopped'
+
+  - name: Restart the service
+    win_service:
+      name: vss
+      state: restarted
+    register: restart_servicestatus
+    when: servicestatus.exists == true
+
+  - name: Display the service status after restart
+    debug:
+      msg: "Service {{servicestatus.name}}: {{servicestatus.state}}"
+    when: restart_servicestatus.changed == true
+
+  - name: Disable the service 
+    win_service:
+      name: vss
+      state: stopped
+      start_mode: disabled
+    register: service_disabled_status
+    when: servicestatus.exists == true
+
+  - name: Display the service status after disabling
+    debug:
+      msg: 'Service status {{service_disabled_status.start_mode}}' 
+    when: service_disabled_status.changed == true
+
+
+
+
+
+
+  
+
+

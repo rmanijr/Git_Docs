@@ -1,0 +1,12 @@
+---
+- hosts: win
+  tasks:
+  - name: Reboot the machine with all defaults
+    #win_reboot:
+    win_command: 
+      'dir c:\temp'
+
+  - name: reboot a slow maching that might have lots of update to apply
+    win_reboot:
+      reboot_time: 3600
+

@@ -1,0 +1,9 @@
+---
+- hosts: win
+  gather_facts: true
+  tasks:
+  - name: print the hostname
+    command:
+      ip a
+    delegate_to: localhost
+

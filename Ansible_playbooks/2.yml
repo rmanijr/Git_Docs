@@ -1,0 +1,9 @@
+---
+- hosts: win
+  gather_facts: false
+  tasks:
+  - name: zip a directory
+    win_zip:
+      src: C:\temp
+      dest: C:\temp\OldLogs.zip
+      creates: C:\temp\OldLogs.zip

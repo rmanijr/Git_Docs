@@ -1,0 +1,14 @@
+- name: download the package from url
+  hosts: win
+  tasks:
+  - name: download the package 
+    win_get_url:
+      url: https://archive.apache.org/dist/httpd/binaries/win32/httpd-2.2.25-win32-x86-no_ssl.msi
+      dest: c:\temp\httpd-2.2.25-win32-x86-no_ssl.msi
+    register: file_download_status
+
+  - name: list the folder content c:\temp
+    win_shell:
+      gci c:\temp
+    #when: file_download_status.statuscode == '200'
+

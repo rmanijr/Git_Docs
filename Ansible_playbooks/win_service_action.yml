@@ -1,0 +1,53 @@
+- hosts: win
+  gather_facts: false
+  vars_prompt:
+  - name: service_name
+    prompt: Enter service name
+    private: no
+  
+  - name: service_status
+    prompt: "Enter service status '(status /stop / restart / disabled)'"
+    private: no
+    default: 'restart'
+
+  tasks:
+  - name: checke the service status
+    win_service:
+      name: "{{ service_name }}"
+    register: servicestatus
+    when: service_status == 'status'
+ 
+  - name: stop the service 
+    win_service:
+      name: "{{ service_name }}"
+      state: stopped
+    register: stop_service
+    when: service_status == 'stop'
+
+  - name: restart the service 
+    win_service:
+      name: "{{ service_name }}"
+      state: restarted
+    register: restart_service
+    when: service_status == 'restart'
+
+  - name: disable the service
+    win_service: 
+      name: "{{service_name}}"
+      state: stopped
+      start_mode: 'disabled'
+    register: disable_service
+    when: service_status == 'disabled'
+  
+  - name: service current status
+    win_service:
+      name: "{{ service_name}}"
+    register: current_status
+    when: service_name != ""
+
+
+  - debug:
+      msg: "Current service: '{{ service_name}}'  status is {{current_status.state}} and start_mode is {{current_status.start_mode}}"
+    when: current_status 
+ 
+

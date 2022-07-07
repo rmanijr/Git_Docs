@@ -1,0 +1,25 @@
+---
+- hosts: win
+  gather_facts: false
+  tasks:
+  - name: download winzip file from url
+    win_get_url:
+      url: https://download.winzip.com/gl/gad/winzip26.exe
+      dest: c:\temp
+      force: no
+ 
+  - name: install winzip26.exe
+    win_package:
+      path: c:\temp\winzip26.exe
+      creates_path: c:\program files\winzip\winzip64.exe
+      state: present
+            
+  
+  #- name: Uninstall winzip 
+   # win_package:
+    #  path: c:\program files\winzip\uninstall64.exe
+     # creates_path: c:\program files\winzip\winzip64.exe
+     # arguments: /S
+     # state: absent
+     # reboot_required: false
+
