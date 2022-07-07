@@ -1,0 +1,337 @@
+install git latest version form Tarball on Rdhat Enterprise Linux 7.x:
+======================================================================
+
+1. We need to install the required tools first.
+	# yum groups install "Development Tools" -y
+	# yum install -y gettext-devel openssl-devel perl-CPAN perl-devel zlib-devel curl-devel
+  
+2. Post installation of the required tools, we have to open the "https://git-scm.com/downloads". It'll automatically detect the base platform OS, then click the download and follow the guidance for the respective OS flavour of Linux. (for me i am working on RHEL 7.5), so refering the below guidance. 
+
+
+	Red Hat Enterprise Linux, Oracle Linux, CentOS, Scientific Linux, et al.
+
+	RHEL and derivatives typically ship older versions of git. You can download a tarball and build from source, or use a 3rd-party repository such as the IUS Community Project to obtain 		a more recent version of git.
+
+	tarball ---> https://mirrors.edge.kernel.org/pub/software/scm/git/
+
+	once you opened the above link, we need to check the latest version of the Git and then right click the new version copy the link location ( the version with git-2.25.0.tar.gz).
+
+2.1 Open the terminal and download the tar file using wget command.
+
+	# wget https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.25.0.tar.gz
+2.2 once completed the download we need to untar the tar file. 
+
+	# tar -xvzf git-2.25.0.tar.gz 
+
+2.3 Post which cd the directory which done for the untar folder.
+	cd git-2.25.0/
+2.4 Now we need to run the configuration
+	# ./configure --prefix=/usr/local/git
+	
+	Note: --prefix is the location where we need to install the git application.
+2.5 Once the configuraiton completed then we need to run the make command to compile the source file.
+	# make
+2.6 Now its time to install the application which we make the compiled source code of the Git.
+
+	# make install
+
+2.7 After completion of the Git installtion, now time to goto the installation location and check the Git version.
+	
+	# cd /usr/local/git/bin
+	# ./git --version 
+
+	This will working only for root now we need to export the path into profile, so that everyone can use the git command to work on it.
+
+2.8 export the path into profile.
+	
+	# echo "export PATH=/usr/local/git/bin:$PATH" >> /etc/profile
+	# source /etc/profile
+2.9 Finally check form root and check the Git version by running the git --version to validate it. If it not working for nomal user please run the command. 
+
+	$ source /etc/profile
+
+
+3. Configuration of repository using HTML / SSH methods.
+
+Using HTML:
+===========
+Create a new folder for your git repository for the account and change the directory which you created new one, and then run the below commands to configure your repository as HTML method. 
+	
+	$ git init
+
+	$ git config --global user.name "sureshkk"
+
+	$ git config --global user.email "sureshkk@in.ibm.com"
+
+	$ git config --list
+
+	$ git remote add origin https://github.ibm.com/EU-France/sgi_eventautomation.git
+
+	$ git clone https://github.ibm.com/EU-France/sgi_eventautomation.git sgi_eventautomation
+
+Note: create some new files and the add it to git and post which you can commit & push the same.
+
+	$ git add .
+
+	$ git status
+
+	$ git commit -m "template upload"
+
+	$ git push
+
+
+get the content from the Continuous-Engineering/ansible_template_eventautomation.git, please create a folder called "template_eventautomation" and change the directory and run the below command to get all the content from the "Continuous-Engineering Ansible template".
+
+	$ git clone https://github.ibm.com/Continuous-Engineering/ansible_template_eventautomation.git
+
+Note: Copy all the files from "template_eventautomation" to "<Account tri code>_eventautomation"
+
+Using SSH:
+==========
+
+Referrence:
+-----------
+1. Generating a new SSH key and adding it to the ssh-agent --> https://help.github.com/en/enterprise/2.17/user/github/authenticating-to-github/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent
+
+
+2. Adding a new SSH key to your GitHub account --> https://help.github.com/en/enterprise/2.17/user/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account
+
+
+Generating a new SSH key:
+========================
+	$ ssh-keygen -t rsa -b 4096 -C "sureshkk@in.ibm.com"
+	$ eval "$(ssh-agent -s)"
+	$ ssh-add ~/.ssh/id_rsa
+	$ ssh-add -l
+
+
+Adding a new SSH key to your GitHub account:
+===========================================
+Post SSH key generation from our local machine, we need to copy the public key and past into Git account. for that we need xclip tool to do it.
+
+Download the xclip from the below link using the wget command and install the same.
+
+	$ wget http://download-ib01.fedoraproject.org/pub/epel/7/x86_64/
+	$ ls -ltr |grep clip
+	$ sudo rpm -ivh xclip-0.12-5.el7.x86_64.rpm
+	$ xclip -sel clip < ~/.ssh/id_rsa.pub (or) xclip -sel clip < /home/sureshkumar/.ssh/id_rsa.pub
+
+After the ssh key copied into clipboard, we need to refer the below link to past into the Git account. 
+Adding a new SSH key to your GitHub account --> https://help.github.com/en/enterprise/2.17/user/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account
+
+Post the all steps are completed above, we can test the connection by running the below command.
+
+	$ ssh -T git@169.60.70.162
+
+[sureshkumar@oc7116304173 ~]$ ssh -T git@169.60.70.162
+Hi sureshkk! You've successfully authenticated, but GitHub does not provide shell access.
+
+
+
+Now we need to create a 2 new folders one for our account repo and another one is for Continuous-Engineering. 
+
+1. change the directory for your account report and run the below command to clone your repo.
+	
+	$ git init
+
+	$ git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation 
+	
+2. change directory to Continuous-Engineering template folder and the clone the templates from the repo.
+
+	$ git init
+
+	$ git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+
+
+Once cloned the both the report copy all the files from Continuous-Engineering template to our account repo folder.
+
+Note: create some new files / PM will provide the hello world.ymal and the add it to git and post which you can commit & push the same.
+
+	$ git add .
+
+	$ git status
+
+	$ git commit -m "template upload"
+
+	$ git push
+
+
+
+
+
+
+
+
+
+
+Backup command histroy:
+============================
+
+  647  pwd
+  648  cd Downloads/
+  649  wget https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.25.0.tar.gz
+  650  ll
+  651  tar -xvzf git-2.25.0.tar.gz 
+  652  ll
+  653  cd git-2.25.0/
+  654  ll
+  655  ./configure --prefix=/usr/local/git
+  656  make
+  657  clear
+  658  history
+  659  make install
+  660  cd /usr/local/git
+  661  ll
+  662  git --version
+  663  cd bin/
+  664  ll
+  665  git --version
+  666  ./git --version 
+  667  pwd
+  668  echo "export PATH=/usr/local/git/bin:$PATH" >> /etc/profile
+  669  source /etc/profile
+  670  cd
+  671  pwd
+  672  git --version 
+  673  clear
+  674  exit
+  675  history
+
+
+*****************
+
+  642  ssh-keygen -t rsa -b 4096 -C "sureshkk@in.ibm.com"
+  643  eval "$(ssh-agent -s)"
+  644  ssh-add ~/.ssh/id_rsa
+  645  yum install xclip
+  646  sudo yum install xclip
+  647  man clip
+  648  clear
+  649  cat /home/sureshkumar/.ssh/id_rsa
+  650  clear
+  651  pwd
+  652  cd Download
+  653  cd Downloads
+  654  wget http://download-ib01.fedoraproject.org/pub/epel/7/x86_64/
+  655  ls -ltr |grep clip
+  656  rpm -ivh xclip-0.12-5.el7.x86_64.rpm
+  657  chmod 777 xclip-0.12-5.el7.x86_64.rpm
+  658  rpm -ivh xclip-0.12-5.el7.x86_64.rpm
+  659  sudo rpm -ivh xclip-0.12-5.el7.x86_64.rpm
+  660  xclip -sel clip < ~/.ssh/id_rsa.pub
+  661  clear
+  662  sudo su -
+  663  cd ..
+  664  cd Documents/EU-France/
+  665  ls
+  666  git clone https://github.ibm.com/EU-France/sgi_eventautomation.git sgi_eventautomation
+  667  sudo git clone https://github.ibm.com/EU-France/sgi_eventautomation.git sgi_eventautomation
+  668  clear
+  669  history
+  670  exit
+  671  sudo git clone https://github.ibm.com/EU-France/sgi_eventautomation.git sgi_eventautomation
+  672  xclip -sel clip < /home/sureshkumar/.ssh/id_rsa.pub
+  673  sudo git clone https://github.ibm.com/EU-France/sgi_eventautomation.git sgi_eventautomation
+  674  clear
+  675  history
+  676  sudo git clone https://github.ibm.com/EU-France/sgi_eventautomation.git sgi_eventautomation sgi_eventautomation
+  677  git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation
+  678  pwd
+  679  cd Documents/EU-France/
+  680  ls
+  681  git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation
+  682  sudo git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation
+  683  cd..
+  684  cd ..
+  685  ls
+  686  mv sgi_eventautomation /home/sureshkumar/Documents/EU-France/
+  687  sudo mv sgi_eventautomation /home/sureshkumar/Documents/EU-France/
+  688  cd /home/sureshkumar/Documents/EU-France/
+  689  cls
+  690  clear
+  691  ls
+  692  sudo git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation
+  693  cd sgi_eventautomation
+  694  clear
+  695  ls
+  696  clear
+  697  cd..
+  698  cd ..
+  699  clear
+  700  ls -la
+  701  pwd
+  702  sudo git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  703  cd ..
+  704  clear
+  705  sudo git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  706  sudo git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation
+  707  sudo git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  708  sudo su -
+  709  clear
+  710  cd Documents/
+  711  cd EU-France/
+  712  cls
+  713  clear
+  714  sudo git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  715  $ eval "$(ssh-agent -s)"
+  716   eval "$(ssh-agent -s)"
+  717  ssh-add -l
+  718  ssh-add ~/.ssh/id_rsa
+  719  ssh-add -l
+  720  sudo git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  721  ssh -T git@169.60.70.162
+  722  ssh-add -l
+  723  sudo git clone git@github.ibm.com:EU-France/sgi_eventautomation.git sgi_eventautomation
+  724  sudo git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  725  ls -ltr
+  726  sudo mv sgi_eventautomatio /home/sureshkumar/
+  727  clear
+  728  ls -ltr
+  729  clear
+  730  git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  731  ls -ltr
+  732  cd ..
+  733  ls -ltr
+  734  chwon EU-France sureshkumar
+  735  sudo EU-France sureshkumarA
+  736  sudo chown EU-France sureshkumar
+  737  sudo su -
+  738  pwd
+  739  cd EU-France/
+  740  cls
+  741  clear
+  742  git clone git@github.ibm.com:Continuous-Engineering/ansible_template_eventautomation.git template_eventautomation
+  743  ls
+  744  ls -la
+  745  cd template_eventautomation
+  746  ls -lrt
+  747  man cp
+  748  clear
+  749  ls
+  750  ls -ltr
+  751  cp *.* /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  752  ls -lrt /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  753  man cp
+  754  cp -R *.* /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  755  ls -lrt /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  756  cp -R * /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  757  ls -lrt /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  758  cp /home/sureshkumar/Downloads/hello_world.yaml /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  759  clear
+  760  ls -ltr /home/sureshkumar/Documents/EU-France/sgi_eventautomation/
+  761  ls -ltr /home/sureshkumar/Documents/EU-France/template_eventautomation/
+  762  git status
+  763  clear
+  764  cd ..
+  765  cd sgi_eventautomation/
+  766  clear
+  767  git status
+  768  git add.
+  769  git add .
+  770  git status
+  771  git commit -m "template upload"
+  772  git push
+
+
+
+
