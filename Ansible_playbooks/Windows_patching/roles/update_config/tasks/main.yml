@@ -1,0 +1,75 @@
+---
+    - block:
+        - name: Check_Pending_Reboot
+          win_shell: |
+            $checks = @(
+            if(Get-item -path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' -ErrorAction Ignore) {$true}
+            if(Get-item -path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootInProgress' -ErrorAction Ignore) {$true}
+            if(Get-item -path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' -ErrorAction Ignore) {$true}
+            if(Get-item -path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\PackagesPending' -ErrorAction Ignore) {$true}
+            if(Get-item -path 'HKLM:\SOFTWARE\Microsoft\ServerManager\CurrentRebootAttemps' -ErrorAction Ignore) {$true}
+            if(($regVal = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name 'PendingFileRenameOperations' -ErrorAction Ignore) -and $regVal.('PendingFileRenameOperations')) {$true}
+            if(($regVal = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name 'PendingFileRenameOperations2' -ErrorAction Ignore) -and $regVal.('PendingFileRenameOperations2')) {$true}
+            if(Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'DVDRebootSignal' -ErrorAction Ignore) {$true}
+            if(Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon' -Name 'JoinDomain' -ErrorAction Ignore) {$true}
+            if(Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon' -Name 'AvoidSpnSet' -ErrorAction Ignore) {$true}
+            (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName').ComputerName -ne (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName').ComputerName
+            if(Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Services\Pending') {$true})
+            foreach($check in $checks){if($check){$true};break}
+          register: pend_rbt
+        - name: Display the pending reboot status
+          debug:
+            msg: "{{ 'Condition for PendingReboot is True' if pend_rbt.Stdout is defined else 'Condition for PendingReboot is False' }}"
+        - name: Reboot_If_PendingReboot_IsTrue
+          win_reboot:
+          async: 1200
+          poll: 0
+          vars:
+            ansible_become: yes
+            ansible_become_method: runas
+            ansible_become_user: system
+          when:
+            - "'True' in pend_rbt.stdout_lines"
+            - if_reboot == 'yes'
+        - name: Waiting_To_ReconnectPostReboot
+          wait_for_connection:
+            delay: 30
+            timeout: 900
+        - name: Pause the exeuction until the server come back
+          pause:
+            seconds: 30
+        - name: Ensuring_WindowsUpdate_Service_IsRunning
+          win_service:
+            name: wuauserv
+            start_mode: manual
+            state: restarted
+          async: 900
+          poll: 0
+        - name: Remove_Existing_WU_registry
+          win_regedit:
+            path: HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate
+            state: absent
+            delete_key: yes
+          async: 900
+          poll: 0
+        - name: Configuring_WU_Reg_values
+          win_regedit:
+            path: "{{ item.path }}"
+            name: "{{ item.name }}"
+            type: "{{ item.type }}"
+            data: "{{ item.data }}"
+          with_items:
+            - { path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate', type: string, name: WUServer, data: "http://{{ wsus_server }}:8530/" }
+            - { path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate', type: string, name: WUStatusServer, data: "http://{{ wsus_server }}:8530/" }
+            - { path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU', type: dword, name: UseWUServer, data: 1 }
+            - { path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU', type: dword, name: AUOptions, data: 3 }
+            - { path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate', type: string, name: UpdateServiceUrl, data: "http://{{ wsus_server }}:8530/" }
+
+          no_log: true
+          async: 900
+          poll: 0
+          ignore_errors: True
+        - name: CoolDown_WaitTime_Post_RegConfig
+          pause:
+            seconds: 5
+      ignore_errors: True

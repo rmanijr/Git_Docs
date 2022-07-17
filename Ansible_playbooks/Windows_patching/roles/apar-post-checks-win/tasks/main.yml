@@ -1,0 +1,112 @@
+---
+# tasks file for apar-post-checks-win
+# - name: Run the reboot-check post patching activity
+#   win_command: cmd.exe /c C:\Tools\RebootCheck\RebootCheck.exe /after /s %computername% /logdir c:\tools\rebootcheck\APAR
+#   ignore_errors: true
+#   become: true
+#   become_method: runas
+#   become_user: system
+  
+- name: Post-patching report
+  win_shell: |
+    write-output "Server name:$env:computername - Windows Server Post-check Report" |out-file c:\tools\APAR_check\patching_post_check.txt
+    write-output "-----------------Report generated on $(get-date)-------------------------" |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    Write-output "--- Uptime --- "|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    systeminfo |findstr /c:'System Boot Time:' |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    Write "--- disk space details ---"|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    Get-WmiObject  Win32_Volume | ft –auto DriveLetter,Label,@{Label=”Free(GB)”;Expression={“{0:N0}” –F ($_.FreeSpace/1GB)}},`
+    @{Label=”%Free”;Expression={“{0:P0}” –F ($_.FreeSpace/$_.Capacity)}} |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    write-output "---IP Config /all ---" |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    cmd "/c IPconfig /all"  >>c:\tools\APAR_check\patching_post_check.txt
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    write-output "--- Route Print ----"|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    route print |out-file c:\tools\APAR_check\patching_post_check.txt -append -width 1000
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    write-output "--- Services details --- "|out-file -width 3000 c:\tools\APAR_check\patching_post_check.txt -append
+    Get-service |Select Name,DisplayName,Status,StartType |ft -autosize|out-file -width 3000 c:\tools\APAR_check\patching_post_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    write-output "--- File & Folers share ----"|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    Get-SmbShare |ft -autosize|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    write-output "--- Local users ----"|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    net user |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    write-output "--- Local group ----"|out-file c:\tools\APAR_check\patching_post_check.txt -append
+    Get-LocalGroup |out-file c:\tools\APAR_check\patching_post_check.txt -append
+    Get-service |select Name,Status|ConvertTo-Csv -Delimiter "," > c:\tools\APAR_check\service_after.txt
+  ignore_errors: true
+  become: true
+  become_method: runas
+  become_user: system
+
+- name: Check if Pre check file exists
+  win_stat:
+     path: c:\tools\APAR_check\patching_pre_check.txt
+     get_checksum: no
+  register: file_precheck
+  ignore_errors: true
+
+- name: Check if Post check file exists
+  win_stat:
+     path: c:\tools\APAR_check\patching_post_check.txt
+     get_checksum: no
+  register: file_postcheck
+  ignore_errors: true
+
+- name: Compare the report if both the files are present
+  win_shell: |
+      $before = get-content("c:\tools\APAR_check\patching_pre_check.txt")
+      $after= get-content("c:\tools\APAR_check\patching_post_check.txt")
+      Compare-Object $before $after |ft -autosize |out-file "c:\tools\APAR_check\patching_diff_report.txt" -width 1000
+  # args:
+  #   chdir: c:\tools\APAR_check\
+  when: file_precheck.stat.exists and file_postcheck.stat.exists
+  ignore_errors: true
+
+- name: Read the patching pre and post check comparesion
+  win_shell: Get-Content c:\tools\APAR_check\patching_diff_report.txt
+  register: final_out
+  ignore_errors: true
+
+- name: Display the comparison report pre & post check
+  debug:
+    msg: "{{ final_out.stdout_lines }}"
+  ignore_errors: true
+
+- name: Check if service_before.txt file exists
+  win_stat:
+     path: c:\tools\APAR_check\service_before.txt
+     get_checksum: no
+  register: service_precheck
+  ignore_errors: true
+
+- name: Check if service_after.txt file exists
+  win_stat:
+     path: c:\tools\APAR_check\service_after.txt
+     get_checksum: no
+  register: service_postcheck
+  ignore_errors: true
+
+- name: Compare services before/after, if any services stopped state after reboot will start the service
+  win_shell: |
+    $compresult =Compare-Object -ReferenceObject (Get-Content c:\tools\APAR_check\service_before.txt) -DifferenceObject (get-content c:\tools\APAR_check\service_after.txt) 
+    $servicestoberestarted =@()
+    $compresult|%{ $_.inputobject + $_.SideIndicator -replace "=>",",After" -replace "<=",",Before"}|`
+    %{
+    $servicestoberestarted += if($_ -match '"Stopped",After') {($_.split(",")[0]).trim()}
+    }
+    $servicestoberestarted |%{
+    $_ -replace '"','' |get-service |?{$_.status -ne "Running"}|Start-Service 
+    $_ -replace '"','' |Get-Service
+    }
+  register: fin_service_status
+  when: service_precheck.stat.exists and service_postcheck.stat.exists
+  ignore_errors: true
+
+- name: Display the status of the services after restart
+  debug:
+    msg: "{{ fin_service_status.stdout_lines }}"
+  ignore_errors: true

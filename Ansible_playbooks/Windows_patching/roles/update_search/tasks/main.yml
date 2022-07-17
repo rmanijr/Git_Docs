@@ -1,0 +1,26 @@
+---
+    - name: Main_WU_Search_Block
+      block:
+        - name: Initial_WU_Search
+          win_updates:
+            state: searched
+            category_names: "{{ update_category }}"
+            server_selection: managed_server
+          register: wu_search_result
+          async: 2400
+          poll: 0
+        - name: Job_Check_WU_Search
+          async_status:
+            jid: "{{ wu_search_result.ansible_job_id }}"
+          vars:
+            ansible_become: yes
+            ansible_become_method: runas
+            ansible_become_user: system
+          register: wu_job_result
+          until: wu_job_result.finished
+          retries: 24
+          delay: 100
+      rescue:
+        - name: Some task
+          debug:
+            msg: "resuce_code_here"

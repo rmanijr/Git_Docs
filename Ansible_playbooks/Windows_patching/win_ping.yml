@@ -1,0 +1,39 @@
+---
+# - name: Socks tunnel connection
+# #   hosts: localhost
+# #   connection: local
+#   gather_facts: false
+#   vars:
+#     acc_id: "{{ blueid_shortcode }}"
+#     transaction_id: "{{ tower_job_id }}"
+#   roles:
+#     - role: socks-tunnel
+- name: Ensure Socks tunnel setup
+  hosts: all
+  gather_facts: no
+  roles:
+  - role: socks-tunnel
+    run_once: true
+    delegate_to: localhost
+    vars:
+      acc_id: "sgi"
+      transaction_id: "{{ tower_job_id }}"
+      
+- name: Connectivity test 
+  hosts: all 
+  gather_facts: no
+  vars:
+    ansible_connection: winrm
+    ansible_port: 5985
+    ansible_winrm_transport: kerberos
+    ansible_winrm_server_cert_validation: ignore
+    ansible_winrm_kerberos_delegation: true
+    ansible_winrm_kerberos_hostname_override: xmpsl010pda21ap.ux1.ibmfr.bluecare.ibm.com
+
+  tasks:
+  - name: get powershell version
+    ignore_unreachable: true
+    raw: $PSVersionTable
+  - name: ping
+    ignore_unreachable: true
+    win_ping:

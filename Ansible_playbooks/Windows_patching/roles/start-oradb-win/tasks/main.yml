@@ -1,0 +1,111 @@
+---
+- name: Discover Oracle DB services
+  win_shell: |
+    $dbs= get-service| Where {$_.DisplayName -like "*oracle*" } | Select Name,Displayname | ConvertTo-Json
+    $dbs
+  register: oradb_service
+
+- name: Oracle Database Service installed
+  debug:
+    msg: "Oracle Database Service installed on the endpoint"
+  when: oradb_service.stdout is search('Oracle')
+
+- name: Display No Oracle Database installed on endpoints
+  debug:
+    msg: No Oracle Database installed in the server
+  when: oradb_service.stdout | length == 0
+
+- name: Storing facts for Oracle Database
+  set_fact:
+    oradb: "{{ oradb_service.stdout | from_json|json_query (\"[?contains(DisplayName, 'Oracle')]\") }}"
+  when: oradb_service.stdout is search('Oracle')
+
+- name: Oracle Start task block
+  block:
+    - name: Get the SID
+      win_shell: |
+        $Service=get-wmiobject win32_service |?{$_.Name -like '*SAP???_??*' -and $_.pathname -match 'D00|DVE|SCS' -and $_.StartMode -eq "Auto"}
+        $sub_service=(($service.Name).Substring(3)).split("_")
+        $sub_service[0]
+      register: sid
+      ignore_errors: true
+
+    - name: Dispaly the SIDadm user details
+      debug:
+        msg: "{{ sid.stdout | trim |lower }}adm"
+    - name: Set facts sid adm as variables to become as sidam when start Oracle SID instalce
+      set_fact:
+        sid_adm: "{{ sid.stdout | trim |lower }}adm"
+
+    - name: starting Oracle Database services
+      win_service:
+        name: "{{ item.Name }}"
+        state: started
+        force_dependent_services: yes
+      ignore_errors: yes
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: ora_service_start_status
+      with_items: "{{ oradb }}"
+
+    - name: Get Oracle service status after started
+      win_shell: |
+        get-service |?{$_.Name -like '*Oracle*'} |select DisplayName,Status,StartType
+      register: ora_service_status_started
+      when: ora_service_start_status is changed
+
+    - name: Display the Oracle service status after started
+      debug:
+        msg: "{{ ora_service_status_started.stdout_lines }}"
+      when: ora_service_start_status is changed
+
+    # - name: Get the Oracle service details post the service started
+    #   win_service:
+    #     name: "{{ item.Name }}"
+    #   register: ora_service_status
+    #   with_items: "{{ oradb }}"
+    #   loop_control:
+    #     label: 'OraDB'
+
+    # - name: Display the Oracle services status post the service started
+    #   debug:
+    #     msg:
+    #       - "Name: {{ item.name }}"
+    #       - "Display Name: {{ item.display_name}}"
+    #       - "Status: {{ item.state}}"
+    #       - "Startup type: {{ item.start_mode}}"
+    #       - "Logon as: {{ item.username}}"
+    #   loop: "{{ ora_service_status.results }}"
+    #   loop_control:
+    #     label: 'OraDB'
+
+    - name: Start the Oracle database
+      win_shell: |
+        echo 'startup;' | sqlplus sys/sys as sysdba |select-object -skip 12 | select -skiplast 2
+        echo 'SELECT INSTANCE_NAME FROM V$INSTANCE;' | sqlplus sys/sys as sysdba |select-object -skip 12 | select -skiplast 3
+        lsnrctl start |select-object -skip 4
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: ora_start_status
+      ignore_errors: yes
+
+    - name: Dispaly information about Oracle DB starting status
+      debug:
+        msg: "{{ ora_start_status.stdout_lines }}"
+      when: ora_start_status is changed
+
+    - name: Validate the Oraclen Database
+      win_shell: |
+        echo 'SELECT INSTANCE_NAME, STATUS, DATABASE_STATUS FROM V$INSTANCE;' | sqlplus sys/sys as sysdba |select-object -skip 12 | select -skiplast 3
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: ora_valid_status
+
+    - name: Display the Oracle database validation status
+      debug:
+        msg: "{{ ora_valid_status.stdout_lines }}"
+
+  when: oradb_service.stdout is search('Oracle')

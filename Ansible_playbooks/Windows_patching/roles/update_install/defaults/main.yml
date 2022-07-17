@@ -1,0 +1,8 @@
+---
+  update_category:
+    - "CriticalUpdates"
+    - "SecurityUpdates"
+    - "Updates"
+    - "DefinitionUpdates"
+    - "UpdateRollups"
+  if_reboot: "no"

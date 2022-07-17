@@ -1,0 +1,71 @@
+---
+- name: Discover MSSQL DB services
+  win_shell: |
+    $dbs= get-service| Where {$_.DisplayName -like "*sql*" } | Select Name,Displayname | ConvertTo-Json
+    $dbs
+  register: sqldb_service
+
+- name: MSSQL Database Service installed
+  debug:
+    msg: "MSSQL Database Service installed on the endpoint"
+  when: sqldb_service.stdout is search('MSSQL')
+
+- name: Display No MSSQL Database installed on endpoints
+  debug:
+    msg: "No MSSQL Database installed on this endpoint"
+  #when: not (sqldb_service.stdout is search('MSSQL') != -1)
+  when: sqldb_service.stdout is not search('MSSQL')
+  #when: not "MSSQL" in sqldb_service.stdout
+
+- name: Storing facts for MSSQL Database
+  set_fact:
+    sqldb: "{{ sqldb_service.stdout | from_json|json_query (\"[?contains(DisplayName, 'SQL')]\") }}"
+  when: sqldb_service.stdout is search('MSSQL')
+
+- name: MSSQL Database stop task block
+  block:
+
+    - name: Stop MSSQL Database services
+      win_service:
+        name: "{{ item.Name }}"
+        state: stopped
+        force_dependent_services: yes
+      ignore_errors: yes
+      become: yes
+      become_method: runas
+      become_user: system
+      register: sql_service_stop_status
+      with_items: "{{ sqldb }}"
+
+    - name: Get MSSQL DB service status after stopped
+      win_shell: |
+        get-service |?{$_.Name -like '*sql*'} |select DisplayName,Status,StartType
+      register: sql_service_status_stopped
+      when: sql_service_stop_status is changed
+
+    - name: Display the MSSQL DB service status after stopped
+      debug:
+        msg: "{{ sql_service_status_stopped.stdout_lines }}"
+      when: sql_service_stop_status is changed
+
+    # - name: Get the MSSQL DB service details post the service stopped
+    #   win_service:
+    #     name: "{{ item.Name }}"
+    #   register: sql_service_status
+    #   with_items: "{{ sqldb }}"
+    #   loop_control:
+    #     label: 'sqldb'
+
+    # - name: Display the MSSQL DB services status post the service stopped
+    #   debug:
+    #     msg:
+    #       - "Name: {{ item.name }}"
+    #       - "Display Name: {{ item.display_name}}"
+    #       - "Status: {{ item.state}}"
+    #       - "Startup type: {{ item.start_mode}}"
+    #       - "Logon as: {{ item.username}}"
+    #   loop: "{{ sql_service_status.results }}"
+    #   loop_control:
+    #     label: 'sqldb'
+
+  when: sqldb_service.stdout is search('MSSQL')

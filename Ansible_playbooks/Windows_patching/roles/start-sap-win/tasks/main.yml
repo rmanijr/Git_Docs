@@ -1,0 +1,180 @@
+---
+- name: Discover the SAP application on endpoints
+  win_shell: |
+    $sap_srv=get-service |?{$_.Name -like '*SAP???_??*'} | Select Name,Displayname | ConvertTo-Json
+    $sap_srv
+  register: sap_app
+
+- name: Display SAP installed on the server
+  debug:
+    msg: "SAP Application installed on this endpoint"
+  when: sap_app.stdout is search('SAP')
+
+- name: Display No SAP application /instances installed on endpoints
+  debug:
+    msg: "No SAP Application installed in the server"
+  when: sap_app.stdout | length == 0
+
+- name: set facts for SAP service array
+  set_fact:
+    sap: "{{ sap_app.stdout | from_json|json_query (\"[?contains(DisplayName, 'SAP')]\") }}"
+  when: sap_app.stdout is search('SAP')
+
+- name: SAP Start task executing block
+  block:
+    - name: Get the SID
+      win_shell: |
+        $Service=get-wmiobject win32_service |?{$_.Name -like '*SAP???_??*' -and $_.pathname -match 'D00|DVE|SCS' -and $_.state -eq "Running"}
+        $sub_service=(($service.Name).Substring(3)).split("_")
+        $sub_service[0]
+      register: sid
+      ignore_errors: true
+
+    # - name: Get the SID
+    #   win_shell: |
+    #     $service=get-wmiobject win32_service |?{$_.Name -like '*SAP???_??*'}
+    #     $sub_service=(($service.Name).Substring(3)).split("_")
+    #     $final_sid=$sub_service[0,2,4,6,8,10,12,14,16,18,20] |Get-Unique
+    #     $final_sid|%{($_).trim('`r`n')}
+    #   register: sid
+
+    # - name: Dispaly the SIDadm user details
+    #   debug:
+    #     msg: "{{ item }}adm"
+    #   with_items: "{{ sid.stdout_lines | trim |lower }}"
+
+    - name: Dispaly the SIDadm user details
+      debug:
+        msg: "{{ sid.stdout | trim |lower }}adm"
+
+    - name: Set facts sid adm as variables to become as sidam when start SAP
+      set_fact:
+        sid_adm: "{{ sid.stdout | trim |lower }}adm"
+
+    - name: Start SAP services
+      win_service:
+        name: "{{ item.Name }}"
+        state: started
+        force_dependent_services: yes
+      ignore_errors: yes
+      with_items: "{{ sap }}"
+      register: sap_service_start_status
+
+    - name: Get SAP service status after start
+      win_shell: |
+        get-service |?{$_.Name -like '*SAP???_??*'} |select DisplayName,Status,StartType
+      register: sap_service_status_after
+      when: sap_service_start_status is changed
+
+    - name: Display the SAP service status after start
+      debug:
+        msg: "{{ sap_service_status_after.stdout_lines }}"
+      when: sap_service_start_status is changed
+
+    - name: Copy SAP start & status script to endpoints
+      win_copy:
+        src: files/{{ item }}
+        dest: c:\temp\
+      with_items:
+        - start_sap.ps1
+        - start_scs_sap.ps1
+        - status_sap.ps1
+        - start_sap_java.ps1
+
+    - name: Start SAP ASCS/SCS by executing start_scs_sap.ps1 script with become SIDadm:{{ sid_adm }}
+      win_shell: .\start_scs_sap.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: sap_scs_start
+
+    - name: Start SAP by executing start_sap.ps1 script with become SIDadm:{{ sid_adm }}
+      win_shell: .\start_sap.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: sap_start
+
+    - name: Discover the SAP Java Instance
+      win_shell: |
+        get-wmiobject win32_service |?{$_.Name -like '*SAP???_??*' -and $_.pathname -like "*\j*" -and $_.state -eq "Running"} | select Name,Displayname,status,pathname
+      register: sap_java
+
+    - name: Display the SAP Java service status
+      debug:
+        msg: "{{ sap_java.stdout_lines }}"
+      when: sap_java.rc == 0 and sap_java.stdout | length > 0
+
+    - name: Display if SAP Java instance installed
+      debug:
+        msg: SAP JAVA Instance installed
+      when: sap_java.rc == 0 and sap_java.stdout | length > 0
+
+    - name: Start SAP JAVA by executing start_sap_java.ps1 script with become SIDadm:{{ sid_adm }}
+      win_shell: .\start_sap_java.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: sap_java_start
+      when: sap_java.rc == 0 and sap_java.stdout | length > 0
+
+    - name: Display if SAP JAVA instance not installed
+      debug:
+        msg: No SAP JAVA Instance installed
+      when: sap_java.rc != 0 or sap_java.stdout | length == 0
+
+    - name: Display the SAP ASCS/SCS system start Status message
+      debug:
+        msg: "{{ sap_scs_start.stdout_lines }}"
+
+    - name: Display the SAP system start Status message
+      debug:
+        msg: "{{ sap_start.stdout_lines }}"
+
+    - name: Display the SAP JAVA system start Status message
+      debug:
+        msg: "{{ sap_java_start.stdout_lines }}"
+      when: sap_java.rc == 0 and sap_java.stdout | length > 0
+
+    - name: Execute the SAP Status script to know the sapcontrol.exe GetProcessList
+      win_shell: .\status_sap.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: sap_start_status
+
+    - name: Display the sapcontrol.exe GetProcessList status message
+      debug:
+        msg: "{{ sap_start_status.stdout_lines }}"
+
+    - name: Get the SAP Processes to know any SAP processes are exists in running state
+      win_shell: |
+        Get-Process |select name |Select-String -Pattern 'disp', 'sap'
+      register: sap_process_status
+
+    - name: Display the SAP processes status
+      debug:
+        msg: "{{ sap_process_status.stdout_lines }}"
+
+    - name: Ensure the SAP scripts are deleted from endpoint
+      win_file:
+        path: C:\Temp\{{ item }}
+        state: absent
+      with_items:
+        - start_sap.ps1
+        - status_sap.ps1
+        - start_scs_sap.ps1
+        - start_sap_java.ps1
+      become: yes
+      become_method: runas
+      become_user: system
+
+  when: sap_app.stdout is search('SAP')

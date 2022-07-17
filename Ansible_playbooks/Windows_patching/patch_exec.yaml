@@ -1,0 +1,202 @@
+---
+- name: Socks tunnel setup
+  hosts: "{{ list_hosts }}"
+  gather_facts: no
+  roles:
+  - role: socks-tunnel
+    run_once: true
+    delegate_to: localhost
+    vars:
+      acc_id: "sgi"
+      transaction_id: "{{ tower_job_id }}"
+  
+- name: Windows patching with SAP,Oracle&MSSQL DB stop/start
+  hosts: "{{ list_hosts }}"
+  vars:
+    list_hosts: host.domain.com
+    wsus_group: workshop_group
+    wsus_server: wsus.domain.com
+    pre_config: no
+    update_operation: dummy_search
+    app_stop_start: no
+    if_reboot: no
+    wu_disable: no
+  gather_facts: no
+
+  tasks:
+    
+    - name: Copy the Patch discover script to endpoint
+      win_copy:
+        src: pending_patches/pending_updates.ps1
+        dest: c:\temp\
+
+    - name: Execute the pending_updates.ps1 scirpt to find patches downloaded or not
+      win_shell: .\pending_updates.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: system
+      register: win_pending_updates
+
+    - name: Display the downloaded updates to install on the endpoint
+      debug:
+        msg: "{{ win_pending_updates.stdout_lines }}"
+      when: win_pending_updates.stdout is defined or win_pending_updates.stdout | length > 0
+
+    - name: Set facts to know patches count status
+      set_fact:
+        patch_count: "{{ win_pending_updates.stdout[0] |trim }}"
+
+    - name: Fail the job if there is no patches downloaded from WSUS
+      fail:
+        msg: "No patches are dowloaded from WSUS Server, hence please do manual patching"
+      when: patch_count == "0" or "False" in win_pending_updates.stdout or win_pending_updates.stdout | length == 0
+
+    - name: Preparing the endpoint settings to register the server into WSUS server
+      include_role:
+        name: update_config
+      when: pre_config == 'yes'
+
+    - name: Download security update / patches with the server with WSUS server
+      include_role:
+        name: update_download
+      when: update_operation == 'download'
+
+    - name: Search security update / patches with the server with WSUS server
+      include_role:
+        name: update_search
+      when: update_operation == 'search'
+
+    - name: Start pre-check data collection
+      include_role:
+        name: apar-pre-checks-win
+      when: (update_operation == 'install') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Stop SAP Application
+      include_role:
+        name: stop-sap-win
+      when: >
+        (update_operation == 'install' and app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Stop Oracle Database
+      include_role:
+        name: stop-oradb-win
+      when: >
+        (update_operation == 'install' and app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Stop MSSQL Database
+      include_role:
+        name: stop-mssql-win
+      when: >
+        (update_operation == 'install' and app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Install security update / patches with the server with WSUS server
+      include_role:
+        name: update_install
+      when: >
+        (update_operation == 'install') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Pause the exeuction for server settle down after reboot
+      pause:
+        minutes: 5
+      when: >
+        (update_operation == 'install' or app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Report_Status_To_WSUS
+      win_shell: |
+        $updateSession = New-Object -ComObject 'Microsoft.Update.Session'
+        $updateSearcher = $updateSession.CreateUpdateSearcher()
+        $SearchResult = $updateSearcher.Search("IsInstalled=0").Updates
+        Start-sleep -seconds 10
+        cmd /c "c:\windows\system32\wuauclt /detectnow" | Out-Null
+        (New-Object -ComObject Microsoft.Update.AutoUpdate).DetectNow() | Out-Null
+        cmd /c "c:\windows\system32\wuauclt /reportnow" | Out-Null
+        cmd /c "c:\windows\system32\UsoClient.exe startscan" | Out-Null
+        Start-sleep -seconds 5
+      args:
+        chdir: c:\windows\system32
+      async: 600
+      poll: 0
+      ignore_errors: True
+      when: (update_operation == 'install') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Start Oracle Database
+      include_role:
+        name: start-oradb-win
+      when: >
+        (update_operation == 'install' and app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Start MSSQL Database
+      include_role:
+        name: start-mssql-win
+      when: >
+        (update_operation == 'install' and app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Start SAP Application
+      include_role:
+        name: start-sap-win
+      when: >
+        (update_operation == 'install' and app_stop_start == 'yes') and
+        (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Start post-check data collection and comparison
+      include_role:
+        name: apar-post-checks-win
+      when: (update_operation == 'install' and if_reboot == 'yes') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Get the installed patching details using powershell
+      win_shell: |
+        Get-Hotfix|Where-Object {$_.Installedon -gt ((Get-Date).Adddays(-2))}|
+        Select PSComputerName, Description,CSName,InstalledOn, HotFixID|ft -autosize
+      register: patch_res
+      when: (update_operation == 'install') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Send report to Wintel team
+      win_shell: |
+        $body = "Please find the patching report for the server {{ inventory_hostname }} & Tower job ID: {{ tower_job_id }}"
+        $body += "`r`n"
+        $body += "`r`n"
+        $body += "{{ patch_res.stdout | trim }}"
+        $body += "`r`n"
+        $body += "`r`n"
+        $body += "Regards"
+        $body += "`r`n"
+        $body += "Platform Ansible Automation Team"
+        $body += "`r`n"
+        $body += "Please contact sureshkk@kyndryl.com, if any issues with this report"
+        Send-MailMessage -From 'DL-Kyndryl-SG-VMware@kyndryl.com' -To 'DL-Kyndryl-SG-VMware-Reports@kyndryl.com' `
+        -Subject 'Ansible Patching Report for server - {{ inventory_hostname }}' -Body $body -Priority High `
+        -SmtpServer 'smtp.mail.saint-gobain.net'
+      when: (update_operation == 'install') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+      ignore_errors: True
+
+    - name: Dispaly the installed security patches KB list
+      debug:
+        msg:
+          - "{{ patch_res.stdout_lines | trim }}"
+      when: (update_operation == 'install') and (win_pending_updates.stdout | length > 0 and "True" in win_pending_updates.stdout)
+
+    - name: Ensure pending_updates.ps1 script deleted at end of the execution
+      win_file:
+        path: C:\Temp\pending_updates.ps1
+        state: absent
+      become: yes
+      become_method: runas
+      become_user: system
+
+    - name: Disable_WU_Service
+      win_service:
+        name: wuauserv
+        start_mode: disabled
+        state: stopped
+      when: wu_disable == 'yes'
+      async: 600
+      poll: 0
+

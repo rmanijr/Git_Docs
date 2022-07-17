@@ -1,0 +1,137 @@
+---
+    - name: Install_I - patching installation will start as background job
+      win_updates:
+        state: installed
+        category_names: "{{ update_category }}"
+        server_selection: managed_server
+      register: install_res_I
+      async: 5400
+      poll: 0
+      ignore_errors: True
+
+    - name: checking the status of Install_I as it's running as background job
+      async_status:
+        jid: "{{ install_res_I.ansible_job_id }}"
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: system
+      register: job_chk_I
+      until: job_chk_I.finished
+      retries: 180
+      delay: 30
+      ignore_errors: True
+
+    - name: Reboot_Fix_I
+      win_reboot:
+        reboot_timeout: 1200
+        post_reboot_delay: 180
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: system
+      async: 1200
+      poll: 0
+      when:
+        - if_reboot == 'yes'
+        - ( job_chk_I.reboot_required )
+      ignore_errors: True
+
+    - name: Confirm_Server_Start
+      wait_for_connection:
+        delay: 60
+        timeout: 300
+      ignore_errors: True
+
+    - name: Report_Status_To_WSUS
+      win_shell: |
+        $updateSession = New-Object -ComObject 'Microsoft.Update.Session'
+        $updateSearcher = $updateSession.CreateUpdateSearcher()
+        $SearchResult = $updateSearcher.Search("IsInstalled=0").Updates
+        Start-sleep -seconds 10
+        cmd /c "c:\windows\system32\wuauclt /detectnow" | Out-Null
+        (New-Object -ComObject Microsoft.Update.AutoUpdate).DetectNow() | Out-Null
+        cmd /c "c:\windows\system32\wuauclt /reportnow" | Out-Null
+        cmd /c "c:\windows\system32\UsoClient.exe startscan" | Out-Null
+        Start-sleep -seconds 5
+      args:
+        chdir: c:\windows\system32
+      async: 600
+      poll: 0
+      ignore_errors: True
+
+#########################################################
+
+    - name: Pause the exeuction before start the Install_II
+      pause:
+        minutes: 5
+
+    - name: Conditional_Second_Attempt
+      block:
+        - name: Install_II - patching installation will start as background job
+          win_updates:
+            state: installed
+            category_names: "{{ update_category }}"
+            server_selection: managed_server
+          register: install_res_II
+          async: 5400
+          poll: 0
+          ignore_errors: True
+
+        - name: Set pause timer to wait for the server come back online
+          pause:
+            seconds: 30
+
+        - name: checking the status of Install_II as it's running as background job
+          async_status:
+            jid: "{{ install_res_II.ansible_job_id }}"
+          vars:
+            ansible_become: yes
+            ansible_become_method: runas
+            ansible_become_user: system
+          register: job_chk_II
+          until: job_chk_II.finished
+          retries: 180
+          delay: 30
+          ignore_errors: True
+
+        - name: Reboot_Fix_II
+          win_reboot:
+            reboot_timeout: 1200
+            post_reboot_delay: 180
+          vars:
+            ansible_become: yes
+            ansible_become_method: runas
+            ansible_become_user: system
+          when:
+            - if_reboot == 'yes'
+            - job_chk_II.reboot_required
+          async: 1200
+          poll: 0
+          ignore_errors: True
+
+        - name: Confirm_Server_Start
+          wait_for_connection:
+            delay: 60
+            timeout: 300
+
+        - name: show job var
+          debug: var=job_chk_II.found_update_count
+
+        - name: Report_Status_To_WSUS
+          win_shell: |
+            $updateSession  = New-Object -ComObject 'Microsoft.Update.Session'
+            $updateSearcher = $updateSession.CreateUpdateSearcher()
+            $SearchResult = $updateSearcher.Search("IsInstalled=0").Updates
+            Start-sleep -seconds 10
+            cmd /c "c:\windows\system32\wuauclt /detectnow" | Out-Null
+            (New-Object -ComObject Microsoft.Update.AutoUpdate).DetectNow() | Out-Null
+            cmd /c "c:\windows\system32\wuauclt /reportnow" | Out-Null
+            cmd /c "c:\windows\system32\UsoClient.exe startscan" | Out-Null
+            Start-sleep -seconds 5
+          args:
+            chdir: c:\windows\system32
+          async: 600
+          poll: 0
+          ignore_errors: True
+      when: ( job_chk_I.found_update_count > 0 ) or ( job_chk_I.failed ) or ( install_res_I is undefined ) or ( job_chk_I.found_update_count is undefined )

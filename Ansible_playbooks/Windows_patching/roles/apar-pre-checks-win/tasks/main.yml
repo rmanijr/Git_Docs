@@ -1,0 +1,55 @@
+---
+# tasks file for apar-pre-checks-win
+- name: cleanup the c:\temp folder
+  win_shell: Get-ChildItem -Path c:\temp\ -Recurse | Remove-Item -Recurse -Confirm:$false
+  ignore_errors: true
+
+- name: create the folder reboot-check & pre and post check data collection
+  win_file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - c:\tools\APAR_check
+  ignore_errors: true
+
+- name: Pre-patching report
+  win_shell: |
+    write-output "Server name:$env:computername - Windows Server Pre-check Report" |out-file c:\tools\APAR_check\patching_pre_check.txt
+    write-output "-----------------Report generated on $(get-date)-------------------------" |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    Write-output "--- Uptime --- "|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    systeminfo |findstr /c:'System Boot Time:' |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    Write "--- disk space details ---"|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    Get-WmiObject  Win32_Volume | ft –auto DriveLetter,Label,@{Label=”Free(GB)”;Expression={“{0:N0}” –F ($_.FreeSpace/1GB)}},`
+    @{Label=”%Free”;Expression={“{0:P0}” –F ($_.FreeSpace/$_.Capacity)}} |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    write-output "---IP Config /all ---" |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    cmd "/c IPconfig /all"  >>c:\tools\APAR_check\patching_pre_check.txt
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    write-output "--- Route Print ----"|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    route print |out-file c:\tools\APAR_check\patching_pre_check.txt -append -width 1000
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    write-output "--- Services details --- "|out-file -width 3000 c:\tools\APAR_check\patching_pre_check.txt -append
+    Get-service |Select Name,DisplayName,Status,StartType |ft -autosize|out-file -width 3000 c:\tools\APAR_check\patching_pre_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    write-output "--- File & Folers share ----"|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    Get-SmbShare |ft -autosize|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    write-output "--- Local users ----"|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    net user |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    " " |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    write-output "--- Local group ----"|out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    Get-LocalGroup |out-file c:\tools\APAR_check\patching_pre_check.txt -append
+    Get-service |select Name,Status|ConvertTo-Csv -Delimiter "," > c:\tools\APAR_check\service_before.txt
+  ignore_errors: true
+  become: true
+  become_method: runas
+  become_user: system
+
+# - name: Run the reboot-check before start activity
+#   win_command: cmd.exe /c C:\Tools\RebootCheck\RebootCheck.exe /before /s %computername% /logdir c:\tools\rebootcheck\APAR
+#   ignore_errors: true
+#   become: true
+#   become_method: runas
+#   become_user: system

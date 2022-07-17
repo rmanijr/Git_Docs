@@ -1,0 +1,90 @@
+---
+- name: Discover Oracle DB services
+  win_shell: |
+    $dbs= get-service| Where {$_.DisplayName -like "*oracle*" } | Select Name,Displayname | ConvertTo-Json
+    $dbs
+  register: oradb_service
+
+- name: Oracle Database Service installed
+  debug:
+    msg: "Oracle Database Service installed on the endpoint"
+  when: oradb_service.stdout is search('Oracle')
+
+- name: Display No Oracle Database installed on endpoints
+  debug:
+    msg: No Oracle Database installed in the server
+  when: oradb_service.stdout | length == 0
+
+- name: Storing facts for Oracle Database
+  set_fact:
+    oradb: "{{ oradb_service.stdout | from_json|json_query (\"[?contains(DisplayName, 'Oracle')]\") }}"
+  when: oradb_service.stdout is search('Oracle')
+
+- name: Oracle stop task block
+  block:
+    - name: Get the SID
+      win_shell: |
+        $Service=get-wmiobject win32_service |?{$_.Name -like '*SAP???_??*' -and $_.pathname -match 'D00|DVE|SCS' -and $_.StartMode -eq "Auto"}
+        $sub_service=(($service.Name).Substring(3)).split("_")
+        $sub_service[0]
+      register: sid
+      ignore_errors: true
+
+    - name: Dispaly the SIDadm user details
+      debug:
+        msg: "{{ sid.stdout | trim |lower }}adm"
+    - name: Set facts sid adm as variables to become as sidam when stop SAP
+      set_fact:
+        sid_adm: "{{ sid.stdout | trim |lower }}adm"
+    - name: Stop the Oracle database
+      win_shell: |
+        echo 'SELECT INSTANCE_NAME FROM V$INSTANCE;' | sqlplus sys/sys as sysdba |select-object -skip 12 | select -skiplast 3
+        echo 'shut immediate;' | sqlplus sys/sys as sysdba |select-object -skip 12 | select -skiplast 1
+        lsnrctl stop |select-object -skip 4
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: ora_stop_status
+      #failed_when: ("ORACLE instance shut down" not in ora_stop_status.stdout) or ora_stop_status.rc => 1
+
+    - name: Display message to admin if the Oracle DB not stopped
+      fail:
+        msg: "The Oracle DB is not stopped due to {{ ora_stop_status.stderr }}, kindly check with SAP team to stop DB & proceed manual patching"
+      when:  ora_stop_status.rc >= 1 or "ORACLE instance shut down" not in ora_stop_status.stdout
+
+    - name: Dispaly information about Oracle DB stopped
+      debug:
+        msg: "{{ ora_stop_status.stdout_lines }}"
+      when: ora_stop_status is defined or ora_stop_status.stdout | length > 0
+
+    - name: Stop Oracle Database services
+      win_service:
+        name: "{{ item.Name }}"
+        state: stopped
+        force_dependent_services: yes
+      ignore_errors: yes
+      become: yes
+      become_method: runas
+      become_user: "{{ sid_adm }}"
+      register: ora_service_stop_status
+      with_items: "{{ oradb }}"
+
+    - name: Get Oracle service status after stopped
+      win_shell: |
+        get-service |?{$_.Name -like '*Oracle*'} |select DisplayName,Status,StartType
+      register: ora_service_status_stopped
+
+    - name: Display the Oracle service status after stopped
+      debug:
+        msg: "{{ ora_service_status_stopped.stdout_lines }}"
+
+  when: oradb_service.stdout is search('Oracle')
+
+  # rescue:
+  #   - name: Error message when the block having failed task
+  #     debug:
+  #       msg:
+  #         - "Error while stopping the Oracle Database, hence required manual interventions please call out to SAP team to stop the DB manually"
+  #   - name: Pause the exeution for 15 minutes, manual action to stop Oracle DB by SAP team
+  #     pause:
+  #       minutes: 15

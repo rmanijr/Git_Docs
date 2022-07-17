@@ -1,0 +1,8 @@
+---
+  - name: Initiating_Download
+    win_updates:
+      state: downloaded
+      category_names: "{{ update_category }}"
+      server_selection: managed_server
+    async: 5400
+    poll: 0

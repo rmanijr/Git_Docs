@@ -1,0 +1,7 @@
+---
+  update_category:
+    - "CriticalUpdates"
+    - "SecurityUpdates"
+    - "Updates"
+    - "DefinitionUpdates"
+    - "UpdateRollups"

@@ -1,0 +1,111 @@
+---
+- name: Discover MSSQL DB services
+  win_shell: |
+    $dbs= get-service| Where {$_.DisplayName -like "*sql*" } | Select Name,Displayname | ConvertTo-Json
+    $dbs
+  register: sqldb_service
+
+- name: MSSQL Database Service installed
+  debug:
+    msg: "MSSQL Database Service installed on the endpoint"
+  when: sqldb_service.stdout is search('MSSQL')
+
+- name: Display No MSSQL Database installed on endpoints
+  debug:
+    msg: "No MSSQL Database installed on this endpoint"
+  #when: not (sqldb_service.stdout is search('MSSQL') != -1)
+  when: sqldb_service.stdout is not search('MSSQL')
+  #when: not "MSSQL" in sqldb_service.stdout
+
+- name: Storing facts for MSSQL Database
+  set_fact:
+    sqldb: "{{ sqldb_service.stdout | from_json|json_query (\"[?contains(DisplayName, 'SQL')]\") }}"
+  when: sqldb_service.stdout is search('MSSQL')
+
+- name: MSSQL Database start task block
+  block:
+
+    - name: start MSSQL Database services
+      win_service:
+        name: "{{ item.Name }}"
+        state: started
+        force_dependent_services: yes
+      ignore_errors: yes
+      become: yes
+      become_method: runas
+      become_user: system
+      register: sql_service_start_status
+      with_items: "{{ sqldb }}"
+
+    - name: Get MSSQL DB service status after started
+      win_shell: |
+        get-service |?{$_.Name -like '*sql*'} |select DisplayName,Status,StartType
+      register: sql_service_status_started
+      when: sql_service_start_status is changed
+
+    - name: Display the MSSQL DB service status after started
+      debug:
+        msg: "{{ sql_service_status_started.stdout_lines }}"
+      when: sql_service_start_status is changed
+
+    - name: Copy MSSQL Validation scripts to endpoints
+      win_copy:
+        src: files/{{ item }}
+        dest: c:\temp\
+      with_items:
+        - sql-status-default.ps1
+        - sql-status-named.ps1
+
+    - name: Execute the SQL validation sql-status-default.ps1 scipt for Default instance
+      win_shell: .\sql-status-default.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: system
+      register: single_sql_db_status
+      ignore_errors: yes
+      when: '"MSSQL" in sqldb_service.stdout'
+
+    - name: Display the MSSQL DB Default instance status
+      debug:
+        msg: "{{ single_sql_db_status.stdout_lines }}"
+      when: single_sql_db_status.stdout | length > 0
+
+    - name: Display the MSSQL doesn't have Default instance it may have named instance
+      debug:
+        msg: "The server doesn't have the MSSQL default instance / may having Named instance"
+      when: single_sql_db_status.stdout | length == 0
+
+    - name: Execute the SQL validation sql-status-named.ps1 scipt for Additional / Named instances
+      win_shell: .\sql-status-named.ps1
+      args:
+        chdir: c:\temp
+      become: yes
+      become_method: runas
+      become_user: system
+      register: two_sql_db_status
+      ignore_errors: yes
+
+    - name: Display the MSSQL DB Additional / Named instances status
+      debug:
+        msg: "{{ two_sql_db_status.stdout_lines }}"
+      when: two_sql_db_status.stdout | length > 0 and two_sql_db_status.stderr | length == 0
+
+    - name: Display if the MSSQL doesn't have the Additional / Named instances
+      debug:
+        msg: "The MSSQL doesn't have Additional / Named instances on this endpoint"
+      when: two_sql_db_status.stdout | length == 0
+
+    - name: Ensure the MSSQL validation scripts are deleted from endpoint
+      win_file:
+        path: C:\Temp\{{ item }}
+        state: absent
+      with_items:
+        - sql-status-default.ps1
+        - sql-status-named.ps1
+      become: yes
+      become_method: runas
+      become_user: system
+
+  when: sqldb_service.stdout is search('MSSQL')
